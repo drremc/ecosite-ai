@@ -253,6 +253,103 @@ def screening_flag(land: dict | None, wet: dict | None) -> tuple[str, str]:
     return "GREEN", "No major concern found in these two mapped layers; other ecological factors are NOT evaluated."
 
 
+
+def site_grade(land: dict | None, wet: dict | None) -> dict:
+    """Educational *absolute* grades for two-layer ecological screening.
+
+    A/B/C/D/F classify modeled habitat conversion and mapped aquatic proximity,
+    NOT overall biodiversity, site feasibility, or regulatory approval.
+    Thresholds are transparent prototype choices, not validated ecological cutoffs.
+    Never grade an incomplete data response.
+    """
+    if land is None or wet is None:
+        return {
+            "grade": "N/A", "label": "Not graded",
+            "headline": "Environmental data incomplete",
+            "explanation": "One or both required map layers could not be checked. No letter grade is assigned until both are available.",
+            "reason_code": "missing_data",
+        }
+
+    pct_by_type = land.get("land_pct") or {}
+    natural_pct = float(pct_by_type.get("natural", 0) or 0) + float(pct_by_type.get("wetland", 0) or 0)
+    wetland_pct = float(pct_by_type.get("wetland", 0) or 0)
+    natural_acres = float(land.get("natural_est_acres", 0) or 0)
+    overlap_acres = float(wet.get("overlap_acres", 0) or 0)
+    nearest_m = wet.get("nearest_m")
+    nearest_m = float(nearest_m) if nearest_m is not None else None
+
+    habitat = f"Approximately {natural_acres:.2f} acres ({natural_pct:.1f}%) of the footprint are mapped as natural or wetland cover."
+    if overlap_acres > 0:
+        return {
+            "grade": "F", "label": "Major ecological concern",
+            "headline": "Mapped aquatic habitat overlap",
+            "explanation": f"The footprint overlaps approximately {overlap_acres:.2f} acres of mapped aquatic features. Consider alternative sites and seek an ecological review before proceeding.",
+            "reason_code": "aquatic_overlap",
+        }
+    if wetland_pct > 1:
+        return {
+            "grade": "F", "label": "Major ecological concern",
+            "headline": "Mapped wetland land cover",
+            "explanation": f"USGS land-cover estimates indicate {wetland_pct:.1f}% wetland cover inside this footprint. Wetland conversion warrants specialist review and investigation of alternatives.",
+            "reason_code": "wetland_landcover",
+        }
+    if natural_pct >= 60 or natural_acres >= 10:
+        return {
+            "grade": "F", "label": "Major ecological concern",
+            "headline": "Extensive mapped habitat conversion",
+            "explanation": f"{habitat} This degree of potential habitat conversion makes the site a poor option in this preliminary screening.",
+            "reason_code": "extensive_natural_cover",
+        }
+    if natural_pct >= 30 or natural_acres >= 3:
+        return {
+            "grade": "D", "label": "High ecological concern",
+            "headline": "Substantial potential habitat loss",
+            "explanation": f"{habitat} A location requiring less natural cover disturbance would generally be preferable.",
+            "reason_code": "substantial_natural_cover",
+        }
+    if natural_pct >= 10 or natural_acres >= 1:
+        return {
+            "grade": "C", "label": "Meaningful ecological concern",
+            "headline": "Natural habitat disturbance",
+            "explanation": f"{habitat} A site-specific review is needed to understand its ecological value before building.",
+            "reason_code": "moderate_natural_cover",
+        }
+    if wetland_pct > 0:
+        return {
+            "grade": "C", "label": "Meaningful ecological concern",
+            "headline": "Possible wetland habitat within footprint",
+            "explanation": f"USGS samples suggest {wetland_pct:.1f}% wetland cover within the footprint, although NWI overlap was not identified. Check the wetland boundary and ecological significance on site.",
+            "reason_code": "possible_wetland",
+        }
+    if nearest_m is not None and nearest_m < 100:
+        return {
+            "grade": "C", "label": "Meaningful ecological concern",
+            "headline": "Near mapped aquatic habitat",
+            "explanation": f"The nearest mapped aquatic feature is about {nearest_m:.0f} meters away. Investigate runoff, drainage and appropriate buffers even though the footprint has no mapped NWI overlap.",
+            "reason_code": "near_aquatic",
+        }
+    if natural_pct >= 2 or natural_acres >= 0.25 or (nearest_m is not None and nearest_m < 250):
+        if nearest_m is not None and nearest_m < 250:
+            detail = f"The nearest mapped aquatic feature is about {nearest_m:.0f} meters away."
+        else:
+            detail = habitat
+        return {
+            "grade": "B", "label": "Relatively low mapped concern",
+            "headline": "Promising, with some considerations",
+            "explanation": f"{detail} The footprint has comparatively limited documented concerns in these two map layers, but field review is still needed.",
+            "reason_code": "minor_concerns",
+        }
+    return {
+        "grade": "A", "label": "Lowest mapped concern",
+        "headline": "Promising location for further review",
+        "explanation": f"Only about {natural_acres:.2f} acres ({natural_pct:.1f}%) are mapped as natural or wetland cover, with no mapped aquatic feature within 250 meters. This makes the site a strong candidate for the next screening stage.",
+        "reason_code": "limited_mapped_impact",
+    }
+
+
+GRADE_ORDER = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4, "N/A": 5}
+
+
 def compare_sites(rows: list[dict]) -> list[dict]:
     """Sort with conservative 'screen first' rule, never a weighted biodiversity score."""
     eligible = [r for r in rows if r.get("flag") in ("GREEN", "YELLOW") and r.get("land") and r.get("wet")]
@@ -276,7 +373,8 @@ def analyze_site(feature: dict):
     except Exception as e:
         issues["nwi"] = str(e)
     flag, reason = screening_flag(land, wet)
-    return {"area_acres": round(acres_of(geom), 2), "flag": flag,
+    grade = site_grade(land, wet)
+    return {"area_acres": round(acres_of(geom), 2), "flag": flag, "grade": grade,
             "reason": reason, "land": land, "wet": wet, "issues": issues,
             "analyzed_utc": datetime.now(timezone.utc).isoformat(),
             "scope": "NLCD land cover and mapped NWI aquatic features only; 5 other ecological factors unassessed"}
