@@ -1,4 +1,4 @@
-"""EcoSite AI: polished, transparent preliminary GIS comparison website."""
+"""EcoSite AI: accessible, transparent preliminary GIS comparison website."""
 from __future__ import annotations
 
 import csv
@@ -25,51 +25,87 @@ st.set_page_config(
 
 st.markdown(
     """<style>
-    :root {--ink:#142f34;--teal:#146256;--pale:#e9f5ef;--gold:#eaa452;--muted:#5f7477;}
+    :root {--ink:#142f34;--teal:#146256;--pale:#e9f5ef;--gold:#eaa452;--muted:#38564f;}
     .stApp {background:#f7faf8;}
     .block-container {padding-top:1.45rem; padding-bottom:3.5rem; max-width:1480px;}
-    [data-testid="stSidebar"] {background: #eef5f0; border-right:1px solid #d9e7df;}
+    /* Explicit light-on-light palette keeps the side controls readable even when
+       visitors have a dark theme selected in their browser or Streamlit settings. */
+    [data-testid="stSidebar"] {background:#edf5ef !important; color:#15372f !important;
+      border-right:1px solid #cbded1;}
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {color:#15372f !important;}
+    [data-testid="stSidebar"] h3 {font-size:1.10rem !important; font-weight:760;
+      line-height:1.35; margin-bottom:.65rem;}
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stSidebar"] label {font-size:.99rem !important; font-weight:650 !important;
+      line-height:1.5 !important;}
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+      color:#37584e !important; font-size:.92rem !important; line-height:1.58 !important;
+      opacity:1 !important;}
+    [data-testid="stSidebar"] input {color:#16392f !important; background:#fff !important;
+      border:1px solid #809e90 !important; font-size:1rem !important;}
+    [data-testid="stSidebar"] input::placeholder {color:#4d655b !important; opacity:1;}
+    [data-testid="stSidebar"] button {font-size:.97rem !important;
+      font-weight:700 !important; min-height:2.7rem;}
+    [data-testid="stSidebar"] [data-testid="stDivider"] {color:#cbded1;}
+    .sidebar-help {font-size:.94rem;line-height:1.58;color:#33564b;
+      margin:.38rem 0 1rem;}
+    .sidebar-version {font-size:.82rem;line-height:1.55;color:#35584c;
+      font-weight:720;letter-spacing:.025em;margin:.6rem 0;}
     h1,h2,h3,p {overflow-wrap:anywhere;}
     h2 {font-size:1.45rem !important; letter-spacing:-.03em; color:var(--ink);}
     [data-testid="stVerticalBlockBorderWrapper"] {border-color:#dce9e2 !important;}
     .hero {position:relative;overflow:hidden;background:linear-gradient(116deg,#102f33 0%,#14584f 69%,#277a65 100%);color:#fff;border-radius:22px;padding:34px 40px 38px;margin:4px 0 20px;box-shadow:0 12px 40px rgba(11,65,53,.10);}
     .hero:after {content:"";position:absolute;width:280px;height:280px;border:1px solid rgba(255,255,255,.15);border-radius:50%;right:-72px;top:-84px;box-shadow:0 0 0 50px rgba(255,255,255,.025),0 0 0 102px rgba(255,255,255,.025);pointer-events:none;}
-    .hero .eyebrow {font-size:.71rem;font-weight:780;letter-spacing:.19em;text-transform:uppercase;color:#bfe8d5;margin-bottom:11px;}
+    .hero .eyebrow {font-size:.83rem;font-weight:780;letter-spacing:.19em;text-transform:uppercase;color:#bfe8d5;margin-bottom:11px;}
     .hero h1 {font-size:clamp(2.2rem,4vw,3.45rem);font-weight:810;letter-spacing:-.065em;line-height:1.06;margin:0 0 12px;color:white;}
     .hero h1 em {font-style:normal;color:#d9f4b2;}
-    .hero p {max-width:780px;color:#ddede6;font-size:1.02rem;line-height:1.6;margin:0 0 19px;}
+    .hero p {max-width:930px;color:#f0f8f3;font-size:1.04rem;line-height:1.64;margin:0 0 12px;}
+    .hero .hero-lead {font-size:1.16rem;line-height:1.58;font-weight:630;color:#ffffff;
+      max-width:980px;margin:0 0 14px;}
+    .hero .hero-support {max-width:920px;line-height:1.68;margin-bottom:18px;}
+    .hero strong {color:#ffffff;font-weight:780;}
     .chips {display:flex;flex-wrap:wrap;gap:9px;}
-    .chip {border-radius:30px;border:1px solid rgba(255,255,255,.26);font-size:.77rem;font-weight:650;padding:6px 12px;color:#eaf8ef;}
+    .chip {border-radius:30px;border:1px solid rgba(255,255,255,.42);font-size:.86rem;font-weight:650;padding:6px 12px;color:#eaf8ef;}
     .meta-strip {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:21px;}
     .meta {background:#fff;border:1px solid #dfeae3;border-radius:14px;padding:14px 18px;box-shadow:0 2px 6px rgba(16,59,47,.02)}
-    .meta .caption {font-size:.74rem;font-weight:670;color:#667e7a;letter-spacing:.03em;text-transform:uppercase;}
+    .meta .caption {font-size:.85rem;font-weight:670;color:#425e56;letter-spacing:.03em;text-transform:uppercase;}
     .meta .value {font-size:1.4rem;font-weight:800;color:#1a4c46;margin-top:2px;line-height:1.25;}
     .section-head {display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;margin-top:10px;}
     .section-head h2 {margin:0;font-size:1.38rem!important;}
-    .section-head p {margin:3px 0 0;font-size:.86rem;color:#6c807b;}
-    .section-pill {color:#1e6557;background:#e1f1e6;border-radius:30px;padding:6px 10px;white-space:nowrap;font-size:.75rem;font-weight:700;}
+    .section-head p {margin:3px 0 0;font-size:.98rem;color:#395950;line-height:1.55;}
+    .section-pill {color:#1c5a4d;background:#e1f1e6;border-radius:30px;padding:6px 10px;white-space:nowrap;font-size:.86rem;font-weight:700;}
     .site-list {display:grid;gap:10px;margin:10px 0;}
     .site-mini {background:#fff;border:1px solid #dfeae4;border-radius:13px;padding:14px 16px;display:flex;gap:12px;align-items:start;}
     .site-dot {width:12px;height:12px;min-width:12px;border-radius:50%;margin-top:5px;}
-    .site-title {color:#143a38;font-size:.95rem;font-weight:730;margin-bottom:3px;}
-    .site-sub {color:#697d78;font-size:.8rem;line-height:1.45;}
+    .site-title {color:#143a38;font-size:1.05rem;font-weight:730;margin-bottom:3px;}
+    .site-sub {color:#37574f;font-size:.93rem;line-height:1.55;}
     .grade-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0 22px;}
     .grade-card {background:white;border:1px solid #dce8e1;border-top:5px solid var(--grade-accent);border-radius:16px;padding:20px 20px 18px;min-width:0;box-shadow:0 6px 22px rgba(23,64,56,.045);}
     .grade-card .top {display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:11px;}
     .grade-card .site {font-weight:800;font-size:1rem;color:#183a39;}
     .grade-card .grade {font-size:3.5rem;letter-spacing:-.09em;font-weight:840;color:var(--grade-accent);line-height:1;}
-    .grade-card .tag {background:var(--grade-bg);color:var(--grade-accent);font-weight:770;font-size:.72rem;padding:5px 9px;border-radius:99px;}
+    .grade-card .tag {background:var(--grade-bg);color:var(--grade-accent);font-weight:770;font-size:.86rem;padding:5px 9px;border-radius:99px;}
     .grade-card .heading {color:#203b39;font-size:.98rem;font-weight:780;margin:13px 0 6px;}
-    .grade-card .reason {color:#596d6b;font-size:.86rem;line-height:1.58;margin:0;min-height:85px;}
-    .grade-card .measure {margin-top:15px;padding-top:12px;border-top:1px solid #e6eee8;color:#627571;font-size:.75rem;line-height:1.55;}
+    .grade-card .reason {color:#3e5850;font-size:.98rem;line-height:1.64;margin:0;min-height:85px;}
+    .grade-card .measure {margin-top:15px;padding-top:12px;border-top:1px solid #e6eee8;color:#456056;font-size:.87rem;line-height:1.55;}
     .comparison-banner {display:flex;gap:15px;align-items:center;background:#e9f5ee;border:1px solid #c3dfd0;padding:17px 20px;border-radius:13px;margin:10px 0 18px;color:#154d41;}
     .comparison-banner strong {font-weight:800;}
-    .comparison-banner span {display:block;margin-top:3px;font-size:.85rem;line-height:1.5;}
-    .notice {background:#fff9ec;border:1px solid #eeddb9;border-radius:12px;padding:12px 15px;color:#6b562f;font-size:.84rem;line-height:1.55;margin:12px 0;}
+    .comparison-banner span {display:block;margin-top:3px;font-size:.97rem;line-height:1.5;}
+    .notice {background:#fff9ec;border:1px solid #eeddb9;border-radius:12px;padding:12px 15px;color:#5e4823;font-size:.97rem;line-height:1.55;margin:12px 0;}
     .brand {padding:10px 0 3px;font-size:1.28rem;color:#174d42;font-weight:800;letter-spacing:-.035em;}
-    .brand-caption {font-size:.73rem;letter-spacing:.12em;color:#66867a;font-weight:700;text-transform:uppercase;margin-bottom:25px;}
-    .foot {color:#6a7c76;font-size:.82rem;line-height:1.6;}
-    @media(max-width:780px) { .hero{padding:24px 21px}.meta-strip{grid-template-columns:1fr 1fr}.grade-card .reason{min-height:0;} }
+    .brand-caption {font-size:.88rem;letter-spacing:.095em;color:#315a4b;font-weight:700;text-transform:uppercase;margin-bottom:25px;}
+    .foot {color:#415b52;font-size:.96rem;line-height:1.6;}
+    /* Improve legibility of native Streamlit copy throughout side-by-side panels. */
+    [data-testid="stMainBlockContainer"] [data-testid="stCaptionContainer"] p {
+      color:#405d53 !important;font-size:.93rem !important;line-height:1.6 !important;}
+    @media(max-width:780px) { .hero{padding:24px 21px}.hero .hero-lead{font-size:1.07rem;}
+      .meta-strip{grid-template-columns:1fr 1fr}.grade-card .reason{min-height:0;} }
+    @media(max-width:520px) { .meta-strip{grid-template-columns:1fr} }
     </style>""",
     unsafe_allow_html=True,
 )
@@ -143,19 +179,19 @@ with st.sidebar:
             st.error(f"Could not search for this town: {exc}")
     st.divider()
     st.markdown("### 02 / Outline a location")
-    st.caption("On the map, use the rectangle or polygon drawing tool. Then add that footprint below the map.")
+    st.markdown('<p class="sidebar-help">Use the rectangle or polygon tool on the map, then click <strong>Add drawn location</strong> below the map.</p>', unsafe_allow_html=True)
     new_label = st.text_input(
         "Site name",
         value=f"Site {chr(65 + len(st.session_state.sites))}" if len(st.session_state.sites) < 5 else "New site",
     )
-    st.caption(f"{len(st.session_state.sites)} of 5 locations added")
+    st.markdown(f'<p class="sidebar-help"><strong>{len(st.session_state.sites)} of 5</strong> locations added</p>', unsafe_allow_html=True)
     st.divider()
     st.markdown("### 03 / Run comparison")
     analyze = st.button(
         "Analyze selected sites", type="primary", use_container_width=True,
         disabled=len(st.session_state.sites) < 2,
     )
-    st.caption("Select at least 2 sites. Live GIS layers require an internet connection.")
+    st.markdown('<p class="sidebar-help">Select at least two sites. Environmental map layers are loaded from public online services.</p>', unsafe_allow_html=True)
     if st.session_state.sites:
         if st.button("Remove last site", use_container_width=True):
             removed = st.session_state.sites.pop()
@@ -166,14 +202,16 @@ with st.sidebar:
             st.session_state.results = {}
             st.rerun()
     st.divider()
-    st.caption("FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 2")
+    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 3</p>', unsafe_allow_html=True)
 
 st.markdown(
     '''<div class="hero">
       <div class="eyebrow">Environmental intelligence / Site selection</div>
       <h1>Build smarter.<br><em>Protect more nature.</em></h1>
-      <p>Compare potential data-center locations using real environmental map layers. See a preliminary letter grade for each site and an easy-to-understand explanation of the ecological concerns.</p>
-      <div class="chips"><span class="chip">✓ Map-based evidence</span><span class="chip">✓ A–F site grades</span><span class="chip">✓ Transparent methods</span></div>
+      <p class="hero-lead">Compare potential data-center locations using real environmental map layers—and understand what each choice could mean for local wildlife and habitats.</p>
+      <p class="hero-support"><strong>Why it matters:</strong> Data centers need space and supporting infrastructure. Building in the wrong place can remove natural habitat and affect wetlands or waterways. Choosing locations carefully can help communities avoid unnecessary damage to biodiversity.</p>
+      <p class="hero-support"><strong>How EcoSite AI helps:</strong> Draw two to five possible building sites on the map. The tool compares public land-cover and mapped aquatic-habitat data, then gives each location a preliminary <strong>A–F environmental grade</strong> and a short explanation of its strengths and risks. It's a starting point for better questions—not a final construction approval.</p>
+      <div class="chips"><span class="chip">✓ Compare 2–5 sites</span><span class="chip">✓ A–F preliminary grades</span><span class="chip">✓ Evidence-based explanations</span></div>
     </div>''',
     unsafe_allow_html=True,
 )
@@ -359,7 +397,7 @@ if st.session_state.results:
     writer.writerows(report)
     st.download_button(
         "↓ Download report (CSV)", output.getvalue(),
-        file_name="ecosite_biodiversity_comparison_v2.csv",
+        file_name="ecosite_biodiversity_comparison_v3.csv",
         mime="text/csv", use_container_width=False,
     )
     for site, result in completed:
