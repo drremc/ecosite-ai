@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from shapely.ops import transform
 from model import TO_EQUAL, acres_of, ensure_polygon, get_land_cover, get_wetlands
+from native_plants import native_plant_shortlist
 
 # An explicit geometric screening definition, not an ecological setback requirement.
 NEAR_SITE_MAX_M = 500.0
@@ -85,12 +86,17 @@ def _action(title: str, rationale: str, verify: str, step: str = 'Restore') -> d
 
 
 def make_restoration_plan(development: dict, restoration: dict, context: dict, *,
-                          development_name: str, location_name: str) -> dict:
+                          development_name: str, location_name: str,
+                          plant_context: dict | None = None) -> dict:
     """Conservative, conditional guidance based on actual mapped class percentages.
 
     NWI features may also include open water: do not call all NWI features wetlands.
     Potentially modifiable mapped cover is not proven restorable land or credits.
     """
+    plant_context = plant_context or {}
+    native_plant_guidance = native_plant_shortlist(
+        plant_context.get("state"),plant_context.get("sunlight", "unknown"),
+        plant_context.get("soil_moisture", "unknown"))
     land = restoration.get('land')
     wet = restoration.get('wet')
     acres = float(context['area_acres'])
@@ -218,6 +224,7 @@ def make_restoration_plan(development: dict, restoration: dict, context: dict, *
         'nwi_status': 'checked' if wet is not None else 'unavailable',
         'net_biodiversity_gain': None,
         'verified_offset': False,
+        'native_plant_guidance':native_plant_guidance,
         'basis': 'USGS NLCD categorical land cover, USFWS NWI aquatic layer, conditional ecological practice guidance',
     }
 
@@ -252,6 +259,19 @@ def plan_markdown(plan: dict) -> str:
             f"### {n}. {item['title']} ({item['step']})", item['rationale'],
             f"**What to verify:** {item['verify']}", '',
         ])
+    planting = plan['native_plant_guidance']
+    lines.extend(['## Native plants to investigate (conditional, not an approved mix)', '',
+                  f'**State:** {planting["state"]}',
+                  f'**Sunlight selected by user:** {planting["sunlight"]}',
+                  f'**Soil moisture selected by user:** {planting["soil_moisture"]}',
+                  planting['note'],''])
+    for item in planting['items']:
+        lines.append(f'- **{item["common"]}** (*{item["scientific"]}*): {item["role"]}')
+    if planting['sources']:
+        lines.extend(['', '### Sources for plant recommendations'])
+        for source in planting['sources']:
+            lines.append(f'- {source["title"]}: {source["url"]}')
+    lines.append('')
     lines.extend(['## Key limitations / warnings', *[f'- {x}' for x in plan['warnings']], ''])
     if plan['issues']:
         lines.extend(['## Map service issues', *[f'- {k}: {v}' for k, v in plan['issues'].items()], ''])
