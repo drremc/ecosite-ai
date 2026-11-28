@@ -112,3 +112,22 @@ def native_plant_shortlist(state: str | None, sunlight: str = "unknown",
                 "before planting; do not plant into high-quality existing habitat."),
     })
     return data
+
+
+def iowa_reference_groups() -> list[dict]:
+    """Preview factual Iowa-native examples grouped by site conditions.
+
+    These are not assigned to any mapped site and cannot be used to calculate
+    offsets, feasible planting acreage, or ecological equivalence.
+    """
+    groups = [
+        ('Full sun · dry soils', 'sun', 'dry'),
+        ('Full sun · average moisture', 'sun', 'average'),
+        ('Full sun · moist soils', 'sun', 'wet'),
+        ('Part shade · average moisture', 'shade', 'average'),
+    ]
+    return [
+        {'label': label, 'sunlight': sun, 'soil_moisture': moisture,
+         'items': [dict(p) for p in IOWA_PALETTES[(sun, moisture)][:3]]}
+        for label, sun, moisture in groups
+    ]

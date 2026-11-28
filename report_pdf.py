@@ -199,6 +199,9 @@ def build_one_page_report(sites: list[dict], results: dict, *, community: str,
         para(c,clipped(note,200),34,rest_top-27,544,8.4,10.5,max_height=26)
         if plants:
             para(c,'Possible Iowa natives (verify site): '+', '.join(plants)+'.',34,rest_top-53,544,8.1,10,max_height=20)
+        else:
+            para(c,'Plant list pending: select site sunlight and soil moisture to get region-appropriate candidates.',
+                 34,rest_top-53,544,8.1,10,max_height=20)
     else:
         para(c,'No restoration area analyzed yet. Optionally explore on-site landscaping or another candidate parcel. Restore only where ecologically appropriate.',34,rest_top-12,544,8.9,11.5,max_height=34)
 

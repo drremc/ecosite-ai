@@ -422,7 +422,49 @@ st.markdown(
       -webkit-text-fill-color:var(--error-ink) !important;
       white-space:pre-wrap;overflow-wrap:anywhere;
     }
-    /* Version 8: guided workflow, accessible visible progress and demo warning. */
+    /* Version 9: self-rendered status and scientific-limitations panels.
+       Avoid native theme-dependent st.warning/st.info internals entirely. */
+    .ecosite-notice {
+      background:#fff !important;border:2px solid #768e7e !important;
+      border-left:7px solid #365d4c !important;border-radius:13px !important;
+      padding:18px 20px !important;margin:14px 0 18px !important;
+      color:#152d24 !important;color-scheme:light !important;
+      opacity:1 !important;box-shadow:none !important;
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif !important;
+    }
+    .ecosite-notice.notice-warning {
+      background:#fffaf0 !important;border-color:#a56d13 !important;
+      border-left-color:#a56d13 !important;color:#30210d !important;
+    }
+    .ecosite-notice.notice-success {
+      background:#f0faf3 !important;border-color:#246346 !important;
+      border-left-color:#246346 !important;color:#123729 !important;
+    }
+    .ecosite-notice.notice-info {
+      background:#f3f8ff !important;border-color:#345f88 !important;
+      border-left-color:#345f88 !important;color:#173651 !important;
+    }
+    .ecosite-notice :is(h2,h3,h4,p,div,span,strong,em,ul,li,a) {
+      color:inherit !important;-webkit-text-fill-color:currentColor !important;
+      text-shadow:none !important;opacity:1 !important;
+      background:transparent !important;
+      font-family:inherit !important;
+    }
+    .ecosite-notice h4 {font-size:1.12rem !important;line-height:1.4 !important;
+      font-weight:850 !important;margin:0 0 8px !important;}
+    .ecosite-notice p, .ecosite-notice li {font-size:1.04rem !important;
+      line-height:1.65 !important;font-weight:500 !important;margin:4px 0 !important;}
+    .ecosite-notice ul {padding-left:1.45rem !important;margin:7px 0 0 !important;}
+    .ecosite-notice strong {font-weight:850 !important;}
+    .plant-starter {padding:18px 19px;border-radius:15px;border:2px solid #9ab8a4;
+      background:#f2f9f3 !important;margin:18px 0 15px;color:#153529 !important;}
+    .plant-starter :is(h3,p,span,strong,li,em) {color:#153529 !important;
+      -webkit-text-fill-color:#153529 !important;opacity:1 !important;}
+    .plant-starter h3 {font-size:1.18rem !important;font-weight:850 !important;margin:0 0 8px;}
+    .plant-starter p {font-size:1rem !important;line-height:1.6 !important;margin:0;}
+    .plant-group-heading {font-size:1rem !important;font-weight:850;color:#163629 !important;
+      margin:14px 0 7px;}
+        /* Version 8: guided workflow, accessible visible progress and demo warning. */
     .step-strip {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
       margin:5px 0 22px;}
     .step-tile {border:2px solid #a5bbae;border-radius:13px;background:#fff;
@@ -473,6 +515,54 @@ def show_helpful_error(kind: str, error: Exception | None = None) -> None:
     if error is not None:
         with st.expander('Technical details (for support)'):
             st.code(f'{type(error).__name__}: {error}')
+
+
+
+
+def show_notice(kind: str, text: str, *, title: str | None = None) -> None:
+    """Opaque, high-contrast HTML notice that does not inherit Streamlit alert colors.
+
+    Escaping is mandatory: source strings may include GIS service errors.
+    """
+    import re
+    kind = kind if kind in {'warning', 'success', 'info'} else 'info'
+    defaults = {'warning': 'Please check this', 'success': 'Ready for the next step',
+                'info': 'Good to know'}
+    safe_title = escape(title or defaults[kind])
+    safe = escape(str(text))
+    # A few existing status messages use Markdown emphasis. Keep that readable.
+    safe = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', safe)
+    st.markdown(
+        f'<section class="ecosite-notice notice-{kind}" role="note">'
+        f'<h4>{safe_title}</h4><p>{safe}</p></section>', unsafe_allow_html=True,
+    )
+
+
+def show_limits(warnings: list[str]) -> None:
+    """Scientific limitations use a permanently LIGHT panel, not st.warning."""
+    items = ''.join(f'<li>{escape(str(w))}</li>' for w in warnings)
+    st.markdown(
+        '<section class="ecosite-notice notice-warning" role="note" '
+        'aria-label="Important scientific limitations">'
+        '<h4>Important limits — read before using the plan</h4>'
+        f'<ul>{items}</ul></section>', unsafe_allow_html=True,
+    )
+
+
+def render_plant_cards(plants: list[dict], *, limit: int | None = None) -> None:
+    """Render legible scientific species names, roles, and common names."""
+    if limit is not None:
+        plants = plants[:limit]
+    cards = []
+    for plant in plants:
+        cards.append(
+            f'<article class="plant-entry"><div class="plant-name">{escape(plant["common"])}</div>'
+            f'<div class="plant-scientific">{escape(plant["scientific"])}</div>'
+            f'<div class="plant-role">{escape(plant["role"])}</div></article>'
+        )
+    if cards:
+        st.markdown('<div class="plant-grid">'+''.join(cards)+'</div>', unsafe_allow_html=True)
+
 
 
 
@@ -596,7 +686,7 @@ with st.sidebar:
     st.markdown('**3. Explore restoration (optional):** Investigate habitat improvements.')
     st.divider()
     st.markdown('<p class="sidebar-help">Only two layers are currently analyzed: USGS land cover and USFWS mapped aquatic habitats. The tool does not certify safe building locations.</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 8</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 9</p>', unsafe_allow_html=True)
 
 st.markdown(
     '''<div class="hero">
@@ -729,7 +819,7 @@ with left:
     if st.button(f"＋ Add location as {new_label}", use_container_width=True,
                  disabled=len(st.session_state.sites) >= 5 or st.session_state.is_demo):
         if not drawn:
-            st.warning("Select the rectangle tool at the top-left of the map and draw a possible location first.")
+            show_notice('warning', "Select the rectangle tool at the top-left of the map and draw a possible location first.")
         else:
             try:
                 polygon = ensure_polygon(drawn)
@@ -747,7 +837,7 @@ with right:
     st.markdown('''<div class="section-head"><div><h2>Your locations</h2>
       <p>Choose 2–5 places to compare side by side.</p></div></div>''', unsafe_allow_html=True)
     if not st.session_state.sites:
-        st.info("Start with the rectangle icon on the map. Draw your first location, then click **Add location as Site A** below the map. Repeat for Site B.")
+        show_notice('info', "Start with the rectangle icon on the map. Draw your first location, then click **Add location as Site A** below the map. Repeat for Site B.")
     else:
         entries = []
         for i, site in enumerate(st.session_state.sites):
@@ -764,7 +854,7 @@ with right:
         st.markdown('<div class="site-list">' + ''.join(entries) + '</div>', unsafe_allow_html=True)
     if not st.session_state.is_demo:
         if len(st.session_state.sites) >= 2:
-            st.success('Your locations are ready. Select **Compare my locations** below.')
+            show_notice('success', 'Your locations are ready. Select **Compare my locations** below.')
         else:
             st.caption('Add at least two rectangles before comparing.')
         analyze = st.button('Compare my locations', type='primary', use_container_width=True,
@@ -785,7 +875,7 @@ with right:
                     clear_restoration()
                     st.rerun()
     else:
-        st.info('Sample comparison loaded. Leave example mode above to analyze real user-drawn rectangles.')
+        show_notice('info', 'Sample comparison loaded. Leave example mode above to analyze real user-drawn rectangles.')
     st.markdown("#### What the current screening checks")
     st.markdown("**USGS land cover:** estimates natural or wetland cover inside each footprint.")
     st.markdown("**USFWS wetlands inventory:** checks mapped aquatic overlap and nearby features (within 500 m).")
@@ -826,9 +916,9 @@ if st.session_state.results:
             f'{notes_html}<span>Not proof of ecological safety or construction feasibility. Five important factors remain unassessed.</span>'
             '</div></div>',unsafe_allow_html=True)
     else:
-        st.warning('No clear preliminary winner: '+conclusion['reason'])
+        show_notice('warning', 'No clear preliminary winner: '+conclusion['reason'])
     if st.session_state.is_demo:
-        st.warning('DEMONSTRATION ONLY: the following grades and measurements are synthetic, not live environmental evidence.')
+        show_notice('warning', 'DEMONSTRATION ONLY: the following grades and measurements are synthetic, not live environmental evidence.')
     st.markdown('<div class="grade-grid">' + ''.join(site_card(s, r) for s, r in completed) + '</div>',unsafe_allow_html=True)
 
     report=[]
@@ -894,7 +984,7 @@ if st.session_state.results:
                 )
                 st.caption(wet["message"])
             if result['issues']:
-                st.warning('One or more environmental map services did not return usable data. Try comparing again later.')
+                show_notice('warning', 'One or more environmental map services did not return usable data. Try comparing again later.')
                 with st.expander('Technical map-service details (for support)'):
                     st.json(result['issues'])
             st.caption("Unassessed: threatened species, fragmentation, water demand, infrastructure and wildlife disturbance.")
@@ -904,7 +994,14 @@ if st.session_state.results:
 # never changes the A–F construction-site grading and never certifies offsets.
 if st.session_state.results and st.session_state.is_demo:
     st.markdown('### Optional next step: restore habitat')
-    st.info('In a real comparison, the Restoration Planner can examine land near the construction site or another candidate property, and suggest conditional native plants. Leave the fictional example to try it with actual mapped sites.')
+    show_notice('info', 'In a real comparison, the Restoration Planner can examine land near the construction site or another candidate property, and suggest conditional native plants. Leave the fictional example to try it with actual mapped sites.')
+    st.markdown('#### Explore real Iowa-native plants (example mode)')
+    st.caption('These plants are real Iowa-native reference examples. The example sites and their environmental grades are fictional; no plant is being recommended for a specific example parcel.')
+    from native_plants import iowa_reference_groups
+    for group in iowa_reference_groups():
+        st.markdown(f'<div class="plant-group-heading">{escape(group["label"])}</div>', unsafe_allow_html=True)
+        render_plant_cards(group['items'])
+    st.markdown('[Iowa DNR native plant guidance](https://www.iowadnr.gov/news-release/2025-05-07/adding-iowa-native-plants-landscaping-benefits-native-bees-and-butterflies) · [Iowa State Extension plant selection](https://yardandgarden.extension.iastate.edu/faq/what-are-some-good-native-perennials-my-landscape)')
 
 if st.session_state.results and len(st.session_state.sites) >= 2 and not st.session_state.is_demo:
     st.divider()
@@ -942,7 +1039,7 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                             key='restoration_mode', on_change=clear_restoration,
                             index=None, horizontal=True)
             if mode is None:
-                st.info("Choose one of the two options above to continue. Planting and map details will appear after you choose.")
+                show_notice('info', "Choose one of the two options above to continue. Planting and map details will appear after you choose.")
             else:
                 alternative = None
                 if mode == 'alternate':
@@ -972,32 +1069,51 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                 else:
                     st.caption('Draw a separate potential planting area outside the building footprint, within 500 m. It could be landscaping on the same parcel or nearby land, but parcel boundaries and ownership are not verified. To plan landscaping inside the current outline, first redraw that outline as the actual construction footprint.')
 
-                with st.expander('Optional planting details: sun and soil moisture', expanded=False):
-                    st.markdown('Planting choices are optional. Open the settings below for an Iowa native-plant shortlist.')
-                    st.caption('Choose conditions observed on the potential planting area. The map does not measure shade, soil moisture or actual planting suitability.')
-                    light_label = {'unknown':'Not checked yet', 'sun':'Mostly full sun',
-                                   'shade':'Part shade or shade'}
-                    moisture_label = {'unknown':'Not checked yet', 'dry':'Dry or well drained',
-                                      'average':'Average / moderately moist', 'wet':'Moist to wet'}
-                    lcol, scol = st.columns(2)
-                    with lcol:
-                        plant_light = st.selectbox('Sun exposure',list(light_label),
-                            format_func=lambda v: light_label[v],key='plant_light',
-                            on_change=clear_restoration_plan_only)
-                    with scol:
-                        plant_moisture = st.selectbox('Typical soil moisture',list(moisture_label),
-                            format_func=lambda v: moisture_label[v],key='plant_moisture',
-                            on_change=clear_restoration_plan_only)
-                    if (st.session_state.state or '').casefold() != 'iowa':
-                        st.info('Curated species examples currently cover Iowa only. Plant recommendations use a location check on the selected restoration rectangle when you analyze it; other states require local species guidance.')
-                    elif plant_light == 'unknown' or plant_moisture == 'unknown':
-                        st.info('To see suggested Iowa native species, select both sun exposure and soil moisture. The suggestions will still require an on-site check.')
-                    confirm_iowa = st.checkbox(
-                        'I confirm this potential restoration area is in Iowa (backup if map location lookup fails)',
-                        value=False, key='plant_iowa_confirmation',
-                        on_change=clear_restoration_plan_only,
-                        help='A user confirmation is used only if the automatic state lookup is unavailable. A confirmed non-Iowa state takes precedence.',
-                    )
+                st.markdown('### 3 · Choose native planting conditions')
+                st.markdown('''**See specific plant names now.** Select the light and soil conditions of the possible planting area.
+                If you are unsure, leave **Not checked yet**—the guide below will show Iowa examples grouped by conditions, not a site-specific prescription.''')
+                light_label = {'unknown':'Not checked yet', 'sun':'Mostly full sun',
+                               'shade':'Part shade or shade'}
+                moisture_label = {'unknown':'Not checked yet', 'dry':'Dry or well drained',
+                                  'average':'Average / moderately moist', 'wet':'Moist to wet'}
+                lcol, scol = st.columns(2)
+                with lcol:
+                    plant_light = st.selectbox('Sun exposure', list(light_label),
+                        format_func=lambda v: light_label[v],key='plant_light',
+                        on_change=clear_restoration_plan_only)
+                with scol:
+                    plant_moisture = st.selectbox('Typical soil moisture', list(moisture_label),
+                        format_func=lambda v: moisture_label[v],key='plant_moisture',
+                        on_change=clear_restoration_plan_only)
+                st.caption('Sun and moisture are user-observed conditions, not measured by the map. Confirm them on the ground.')
+                confirm_iowa = st.checkbox(
+                    'I confirm the selected restoration area is in Iowa (helps if the location lookup fails)',
+                    value=False, key='plant_iowa_confirmation',
+                    on_change=clear_restoration_plan_only,
+                    help='An explicit confirmation can be used if reverse geocoding is unavailable. Confirmed locations in other states never get Iowa plant recommendations.',
+                )
+                # A sample reference library is available immediately for Iowa towns,
+                # but this does not assert which species is right for a selected parcel.
+                from native_plants import native_plant_shortlist, iowa_reference_groups
+                community_is_iowa = (st.session_state.state or '').casefold() == 'iowa'
+                if community_is_iowa or confirm_iowa:
+                    st.markdown('''<section class="plant-starter"><h3>🌱 Iowa native plant examples</h3>
+                    <p>Browse real Iowa-native species now. Use the site conditions above to narrow the list.
+                    These are research examples—not a verified planting mix for a particular property.</p></section>''', unsafe_allow_html=True)
+                    if plant_light != 'unknown' and plant_moisture != 'unknown':
+                        matched = native_plant_shortlist('Iowa', plant_light, plant_moisture)
+                        st.markdown('<div class="plant-header">Plant candidates for the conditions you entered</div>', unsafe_allow_html=True)
+                        render_plant_cards(matched['items'])
+                    else:
+                        for group in iowa_reference_groups():
+                            st.markdown(f'<div class="plant-group-heading">{escape(group["label"])}</div>',
+                                        unsafe_allow_html=True)
+                            render_plant_cards(group['items'])
+                    st.markdown('**Plant references:** [Iowa DNR](https://www.iowadnr.gov/news-release/2025-05-07/adding-iowa-native-plants-landscaping-benefits-native-bees-and-butterflies) · [Iowa State University Extension — dry soils](https://yardandgarden.extension.iastate.edu/faq/what-native-perennials-grow-well-dry-soils) · [moist soils](https://yardandgarden.extension.iastate.edu/how-to/native-perennials-moist-wet-soils)')
+                    st.caption('For a final restoration report, select actual site conditions and analyze a restoration rectangle. A local ecologist should verify native range, soils, seed provenance, utilities, and any wetland restrictions.')
+                else:
+                    show_notice('info', 'Detailed species examples are currently curated for Iowa. For other states, consult a local natural heritage program or Extension office; Iowa plants are not automatically appropriate elsewhere.',
+                                title='Regional native-plant coverage')
 
                 st.markdown('### 4 · Outline land to restore')
                 center_geom = ensure_polygon(development['feature'])
@@ -1042,7 +1158,7 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                 folium.LayerControl(collapsed=True).add_to(restoration_map)
                 restore_map_response = st_folium(restoration_map, height=390,
                                                  use_container_width=True,
-                                                 key=f'restoration_map_v8_{mode}_{development_id}_{len(options)}',
+                                                 key=f'restoration_map_v9_{mode}_{development_id}_{len(options)}',
                                                  returned_objects=['last_active_drawing'])
                 restored_drawn = (restore_map_response or {}).get('last_active_drawing')
                 b1,b2 = st.columns([2,1])
@@ -1050,7 +1166,7 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                     if st.button('✓ Use drawn restoration area', use_container_width=True,
                                  key='confirm_restoration_rectangle'):
                         if not restored_drawn:
-                            st.warning('Use the rectangle tool in the top-left of the map before clicking this button.')
+                            show_notice('warning', 'Use the rectangle tool in the top-left of the map before clicking this button.')
                         else:
                             try:
                                 polygon = ensure_polygon(restored_drawn)
@@ -1081,7 +1197,7 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                         placement = validate_restoration_area(
                             development['feature'], area_feature, mode,
                             alternative['feature'] if alternative else None)
-                        st.success(f"Restoration rectangle selected: {placement['area_acres']:.2f} acres · approximately {placement['distance_from_build_m']} m from the construction footprint")
+                        show_notice('success', f"Restoration rectangle selected: {placement['area_acres']:.2f} acres · approximately {placement['distance_from_build_m']} m from the construction footprint")
                         if st.button('Analyze restoration opportunities', type='primary',
                                      use_container_width=True, key='analyze_restoration'):
                             with st.spinner('Checking the mapped vegetation and aquatic features…'):
@@ -1137,7 +1253,7 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                     </div>''',unsafe_allow_html=True)
                     st.markdown('**Possible actions to investigate**')
                     if plan['development_mapped_natural_acres'] is not None:
-                        st.info(
+                        show_notice('info', 
                             f"The construction footprint for **{plan['development_name']}** includes about "
                             f"**{plan['development_mapped_natural_acres']:.2f} acres** of mapped natural/wetland cover. "
                             'This cannot be directly balanced against potential planting acres: "acres restored" do not equal "acres of biodiversity loss offset."'
@@ -1153,21 +1269,21 @@ if st.session_state.results and len(st.session_state.sites) >= 2 and not st.sess
                     st.markdown(f'<div class="plant-guidance"><strong>Planting guidance:</strong> {escape(planting["note"])}</div>',unsafe_allow_html=True)
                     if planting['items']:
                         st.markdown('<div class="plant-header">Iowa native-plant shortlist · verify locally before buying seed or planting</div>',unsafe_allow_html=True)
-                        plants_html=[]
-                        for plant in planting['items']:
-                            plants_html.append(
-                                f'<article class="plant-entry"><div class="plant-name">{escape(plant["common"])}</div>'
-                                f'<div class="plant-scientific">{escape(plant["scientific"])}</div>'
-                                f'<div class="plant-role">{escape(plant["role"])}</div></article>')
-                        st.markdown('<div class="plant-grid">'+''.join(plants_html)+'</div>',unsafe_allow_html=True)
+                        render_plant_cards(planting['items'])
+                    if not planting['items'] and planting['state'].casefold() == 'iowa':
+                        show_notice('info', 'To add specific Iowa species to this restoration plan and printable report, choose both sunlight and soil moisture in Step 3, then select Analyze restoration opportunities again.',
+                                    title='Specific plant list not yet selected')
+                    elif not planting['items']:
+                        show_notice('info', 'No location-specific species were assigned. Verify that the restoration area is in Iowa, or ask local specialists for native species appropriate to your state.',
+                                    title='Plant region not verified')
                     if planting['sources']:
                         with st.expander('Plant sources and verification guidance'):
                             for source in planting['sources']:
                                 st.markdown(f'- [{source["title"]}]({source["url"]})')
                             st.caption('Use locally sourced native seed, protect intact ecosystems, and ask a local land manager or conservation biologist to approve the final species mix.')
-                    st.warning('Important limits: ' + ' '.join(plan['warnings']))
+                    show_limits(plan['warnings'])
                     if plan['issues']:
-                        st.warning('Some map services were unavailable. Restoration actions are preliminary and may be incomplete.')
+                        show_notice('warning', 'Some map services were unavailable. Restoration actions are preliminary and may be incomplete.')
                         with st.expander('Technical map-service details (for support)'):
                             st.json(plan['issues'])
                     st.download_button('↓ Download restoration plan (.md)', plan_markdown(plan),
