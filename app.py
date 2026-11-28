@@ -14,7 +14,9 @@ from folium.plugins import Draw
 from shapely.geometry import mapping
 from streamlit_folium import st_folium
 
-from model import NLCD_YEAR, analyze_site, compare_sites, ensure_polygon
+from model import NLCD_YEAR, analyze_site, ensure_polygon
+from experience import make_demo, next_site_name, wizard_step, best_preliminary_option, friendly_error
+from report_pdf import build_one_page_report
 from restoration import (
     analyze_restoration_area, make_restoration_plan, plan_markdown,
     validate_restoration_area,
@@ -316,9 +318,164 @@ st.markdown(
     .plant-entry .plant-scientific {font-size:.98rem;font-style:italic;color:#244b3c !important;
       margin:3px 0 8px;}
     .plant-entry .plant-role {font-size:1rem;color:#27483a !important;line-height:1.5;}
+    /* Version 7: eliminate dark-on-dark error and exception UI.
+       These tokens are independently readable, including when the viewer uses
+       a dark Streamlit preference. Use a light error surface consistently. */
+    :root {
+      --error-ink:#3b1b18; --error-bg:#fff7f5;
+      --error-outline:#b23e34; --error-title:#782018;
+      --status-ink:#18382e; --status-bg:#ffffff;
+    }
+    /* Neutral, legible surfaces for all native status notifications, without
+       falsely coloring informational or success messages red. */
+    [data-testid="stAlert"],
+    [data-testid="stAlert"] [data-baseweb="notification"],
+    [data-testid="stAlertContent"],
+    [data-testid="stNotification"],
+    [data-testid="stToast"],
+    [data-baseweb="toast"] {
+      background-color:var(--status-bg) !important;
+      color:var(--status-ink) !important;
+      border-color:#8ca99a !important;
+      color-scheme:light !important;
+      opacity:1 !important;
+    }
+    /* Unhandled Streamlit errors/tracebacks use the error palette. */
+    [data-testid="stException"],
+    [data-testid="stExceptionDetails"],
+    [data-testid="stExceptionMessage"] {
+      background-color:var(--error-bg) !important;
+      color:var(--error-ink) !important;
+      border-color:var(--error-outline) !important;
+      color-scheme:light !important;
+      opacity:1 !important;
+    }
+    /* Explicit foregrounds, including Markdown wrappers, expandable traceback
+       details, and text in floating notifications. */
+    :is([data-testid="stAlert"], [data-testid="stToast"],
+        [data-testid="stNotification"], [data-baseweb="toast"])
+        :is(p,span,div,strong,em,small,summary,label,pre,code,button),
+    :is([data-testid="stAlert"], [data-testid="stToast"],
+        [data-testid="stNotification"], [data-baseweb="toast"])
+        [data-testid="stMarkdownContainer"] * {
+      color:var(--status-ink) !important;
+      -webkit-text-fill-color:var(--status-ink) !important;
+      opacity:1 !important;
+    }
+    :is([data-testid="stException"], [data-testid="stExceptionDetails"],
+        [data-testid="stExceptionMessage"])
+        :is(p,span,div,strong,em,small,summary,label,pre,code,button),
+    [data-testid="stException"] [data-testid="stMarkdownContainer"] * {
+      color:var(--error-ink) !important;
+      -webkit-text-fill-color:var(--error-ink) !important;
+      opacity:1 !important;
+    }
+    /* Code and stack-trace panels must not inherit the dark code theme. */
+    :is([data-testid="stException"], [data-testid="stExceptionDetails"],
+        [data-testid="stAlert"]) :is(pre,code) {
+      background:#ffffff !important;
+      color:var(--error-ink) !important;
+      -webkit-text-fill-color:var(--error-ink) !important;
+      border:1px solid #d9b4af !important;
+      white-space:pre-wrap !important;
+      overflow-wrap:anywhere !important;
+    }
+    [data-testid="stException"] svg {
+      color:var(--error-title) !important;
+    }
+    /* Modal/dialog surfaces, if Streamlit presents a runtime detail window. */
+    [data-testid="stDialog"],
+    [role="alertdialog"],
+    [data-baseweb="modal"] [role="dialog"] {
+      background:#ffffff !important;
+      color:#172f27 !important;
+      color-scheme:light !important;
+    }
+    :is([data-testid="stDialog"], [role="alertdialog"],
+        [data-baseweb="modal"] [role="dialog"]) :is(p,span,strong,summary,pre,code) {
+      color:#172f27 !important;
+      -webkit-text-fill-color:#172f27 !important;
+      opacity:1 !important;
+    }
+    /* App-generated, intentionally accessible errors. These don't depend on
+       Streamlit internal test IDs and work in sidebar and main content. */
+    .ecosite-error {
+      background:var(--error-bg) !important;
+      color:var(--error-ink) !important;
+      border:2px solid var(--error-outline) !important;
+      border-left:7px solid var(--error-outline) !important;
+      border-radius:12px !important;
+      padding:16px 18px !important;
+      margin:11px 0 16px !important;
+      box-shadow:none !important;
+      color-scheme:light !important;
+    }
+    .ecosite-error .ecosite-error-title {
+      display:block;font-size:1.06rem;font-weight:850;
+      color:var(--error-title) !important;
+      -webkit-text-fill-color:var(--error-title) !important;
+      margin-bottom:5px;
+    }
+    .ecosite-error .ecosite-error-body {
+      display:block;font-size:1.02rem;line-height:1.65;
+      color:var(--error-ink) !important;
+      -webkit-text-fill-color:var(--error-ink) !important;
+      white-space:pre-wrap;overflow-wrap:anywhere;
+    }
+    /* Version 8: guided workflow, accessible visible progress and demo warning. */
+    .step-strip {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
+      margin:5px 0 22px;}
+    .step-tile {border:2px solid #a5bbae;border-radius:13px;background:#fff;
+      color:#16372c !important;padding:13px 15px;min-height:100px;}
+    .step-tile.active {background:#e0f0e5;border-color:#15584b;
+      box-shadow:inset 0 0 0 1px #15584b;}
+    .step-tile.done {background:#f0f5f0;border-color:#a5bbae;}
+    .step-tile .step-number {font-size:.85rem;font-weight:850;letter-spacing:.06em;
+      color:#245346 !important;margin-bottom:6px;}
+    .step-tile .step-name {font-size:1.09rem;font-weight:850;color:#133a2f !important;}
+    .step-tile .step-detail {font-size:.9rem;line-height:1.4;color:#28493b !important;margin-top:4px;}
+    .sample-notice {background:#fff0ce;border:2px solid #ac791b;border-radius:12px;
+      padding:15px 19px;color:#473113 !important;line-height:1.6;font-weight:700;margin:13px 0;}
+    .sample-notice :is(strong,span) {color:#473113 !important;}
+    .begin-tip {background:#edf5ee;border:1px solid #b1c6b6;padding:12px 15px;
+      border-radius:12px;color:#17382c !important;line-height:1.6;margin:8px 0 14px;}
+    @media(max-width:760px){.step-strip{grid-template-columns:1fr;}
+      .step-tile{min-height:72px;}}
     </style>""",
     unsafe_allow_html=True,
 )
+
+def show_error(message: object) -> None:
+    """Display a reliably legible error on a light surface, without HTML injection.
+
+    Used for caught app errors. Uncaught exceptions still use Streamlit's
+    native error UI, covered by the CSS rules above.
+    """
+    details = escape(str(message))
+    st.markdown(
+        '<div class="ecosite-error" role="alert">'
+        '<span class="ecosite-error-title">Unable to complete that step</span>'
+        f'<span class="ecosite-error-body">{details}</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def show_helpful_error(kind: str, error: Exception | None = None) -> None:
+    """Plain-language instruction first; sensitive developer detail stays collapsed."""
+    heading, instruction = friendly_error(kind)
+    st.markdown(
+        '<div class="ecosite-error" role="alert">'
+        '<span class="ecosite-error-title">' + escape(heading) + '</span>'
+        '<span class="ecosite-error-body">' + escape(instruction) + '</span>'
+        '</div>', unsafe_allow_html=True,
+    )
+    if error is not None:
+        with st.expander('Technical details (for support)'):
+            st.code(f'{type(error).__name__}: {error}')
+
+
+
 
 for key, default in (
     ("restoration_geometry", None),
@@ -328,6 +485,8 @@ for key, default in (
     ("restoration_reuse_id", None),
     ("restoration_enabled", False),
     ("sites", []),
+    ("is_demo", False),
+    ("demo_return", None),
     ("results", {}),
     ("center", [42.5349, -92.4453]),
     ("zoom", 12),
@@ -412,50 +571,32 @@ def site_card(site: dict, result: dict) -> str:
 
 
 with st.sidebar:
-    st.markdown('<div class="brand">🌿 EcoSite AI</div><div class="brand-caption">Site comparison studio</div>', unsafe_allow_html=True)
-    st.markdown("### 01 / Find your community")
-    query = st.text_input("City and state", st.session_state.community, help="The map initially opens in Cedar Falls, Iowa.")
-    if st.button("Find town", use_container_width=True):
+    st.markdown('<div class="brand">🌿 EcoSite AI</div><div class="brand-caption">Biodiversity site explorer</div>', unsafe_allow_html=True)
+    st.markdown('### Find a community')
+    query = st.text_input('City and state', st.session_state.community,
+        help='Start with a U.S. city, such as Cedar Falls, Iowa.')
+    if st.button('Find community', use_container_width=True):
         try:
-            new_center, new_state = geocode(query)
-            if query.strip() != st.session_state.community.strip():
-                st.session_state.sites = []
-                st.session_state.results = {}
-                clear_restoration()
+            new_center, new_state = geocode(query.strip())
+            st.session_state.sites = []
+            st.session_state.results = {}
+            st.session_state.is_demo = False
+            st.session_state.demo_return = None
+            clear_restoration()
             st.session_state.center, st.session_state.state = new_center, new_state
-            st.session_state.community = query
+            st.session_state.community = query.strip()
             st.session_state.zoom = 12
             st.rerun()
         except Exception as exc:
-            st.error(f"Could not search for this town: {exc}")
+            show_helpful_error('town', exc)
     st.divider()
-    st.markdown("### 02 / Outline a location")
-    st.markdown('<p class="sidebar-help">Use the rectangle tool on the map, then click <strong>Add drawn location</strong> below the map.</p>', unsafe_allow_html=True)
-    new_label = st.text_input(
-        "Site name",
-        value=f"Site {chr(65 + len(st.session_state.sites))}" if len(st.session_state.sites) < 5 else "New site",
-    )
-    st.markdown(f'<p class="sidebar-help"><strong>{len(st.session_state.sites)} of 5</strong> locations added</p>', unsafe_allow_html=True)
+    st.markdown('### How it works')
+    st.markdown('**1. Choose locations:** Draw 2–5 rectangles on the map.')
+    st.markdown('**2. Compare biodiversity:** Review preliminary A–F grades and source data.')
+    st.markdown('**3. Explore restoration (optional):** Investigate habitat improvements.')
     st.divider()
-    st.markdown("### 03 / Run comparison")
-    analyze = st.button(
-        "Analyze selected sites", type="primary", use_container_width=True,
-        disabled=len(st.session_state.sites) < 2,
-    )
-    st.markdown('<p class="sidebar-help">Select at least two sites. Environmental map layers are loaded from public online services.</p>', unsafe_allow_html=True)
-    if st.session_state.sites:
-        if st.button("Remove last site", use_container_width=True):
-            removed = st.session_state.sites.pop()
-            st.session_state.results.pop(removed["id"], None)
-            clear_restoration()
-            st.rerun()
-        if st.button("Clear all", use_container_width=True):
-            st.session_state.sites = []
-            st.session_state.results = {}
-            clear_restoration()
-            st.rerun()
-    st.divider()
-    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 6</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sidebar-help">Only two layers are currently analyzed: USGS land cover and USFWS mapped aquatic habitats. The tool does not certify safe building locations.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 8</p>', unsafe_allow_html=True)
 
 st.markdown(
     '''<div class="hero">
@@ -480,6 +621,53 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# One-click sample demonstration uses invented values, not external GIS calls.
+if st.session_state.is_demo:
+    st.markdown('''<div class="sample-notice"><strong>FICTIONAL EXAMPLE:</strong> These three rectangles and every grade, acreage and environmental measurement in the demonstration are invented to explain how the website works. They are NOT findings about actual Cedar Falls properties.</div>''', unsafe_allow_html=True)
+    if st.button('↶ Leave example and choose my own locations', key='leave_demo'):
+        st.session_state.sites = []
+        st.session_state.results = {}
+        st.session_state.is_demo = False
+        previous = st.session_state.demo_return or {}
+        st.session_state.community = previous.get('community','Cedar Falls, Iowa')
+        st.session_state.center = previous.get('center',[42.5349,-92.4453])
+        st.session_state.zoom = previous.get('zoom',12)
+        st.session_state.state = previous.get('state','Iowa')
+        st.session_state.demo_return = None
+        clear_restoration()
+        st.rerun()
+else:
+    if st.button('▶ Try an example — explore three fictional sites instantly', key='load_demo'):
+        st.session_state.demo_return = {
+            'community':st.session_state.community,
+            'center':st.session_state.center,
+            'zoom':st.session_state.zoom,
+            'state':st.session_state.state,
+        }
+        st.session_state.sites, st.session_state.results = make_demo()
+        st.session_state.is_demo = True
+        st.session_state.center = [42.5349, -92.4453]
+        st.session_state.zoom = 12
+        st.session_state.community = 'Cedar Falls area — fictional example'
+        st.session_state.state = 'Iowa'
+        clear_restoration()
+        st.rerun()
+
+current_step = wizard_step(st.session_state.sites, st.session_state.results)
+steps = [
+    ('Choose locations', 'Draw and save 2–5 rectangles'),
+    ('Compare biodiversity', 'Review mapped concerns and grades'),
+    ('Explore restoration', 'Optional next step'),
+]
+step_html=[]
+for index,(name,detail) in enumerate(steps,1):
+    stage='active' if index==current_step else ('done' if index<current_step else '')
+    label='CURRENT STEP' if index==current_step else ('DONE' if index<current_step else 'UP NEXT')
+    step_html.append(f'<div class="step-tile {stage}"><div class="step-number">{index} / {label}</div>'
+        f'<div class="step-name">{name}</div><div class="step-detail">{detail}</div></div>')
+st.markdown('<div class="step-strip">'+''.join(step_html)+'</div>',unsafe_allow_html=True)
+
+analyze = False
 left, right = st.columns([1.8, 1], gap="large")
 with left:
     st.markdown('''<div class="section-head"><div><h2>Explore & select sites</h2>
@@ -531,19 +719,17 @@ with left:
     ).add_to(m)
     folium.LayerControl(collapsed=True).add_to(m)
     map_response = st_folium(
-        m, height=510, use_container_width=True, key="ecosite_map",
+        m, height=510, use_container_width=True,
+        key=f"ecosite_map_{len(st.session_state.sites)}_{int(st.session_state.is_demo)}",
         returned_objects=["last_active_drawing"],
     )
     drawn = (map_response or {}).get("last_active_drawing")
-    if st.button("＋ Add drawn location", use_container_width=True,
-                 disabled=len(st.session_state.sites) >= 5):
+    st.markdown('<div class="begin-tip"><strong>Step 1:</strong> Choose the rectangle icon on the map, drag to outline a possible site, then click the button below. EcoSite names it automatically.</div>', unsafe_allow_html=True)
+    new_label = next_site_name(st.session_state.sites)
+    if st.button(f"＋ Add location as {new_label}", use_container_width=True,
+                 disabled=len(st.session_state.sites) >= 5 or st.session_state.is_demo):
         if not drawn:
-            st.warning("First draw a rectangle on the map using the top-left toolbar.")
-        elif not new_label.strip():
-            st.warning("Enter a name for the location in the sidebar.")
-        elif any(s["name"].casefold() == new_label.strip().casefold()
-                 for s in st.session_state.sites):
-            st.warning("Each site needs a different name. Change the site name in the sidebar.")
+            st.warning("Select the rectangle tool at the top-left of the map and draw a possible location first.")
         else:
             try:
                 polygon = ensure_polygon(drawn)
@@ -554,14 +740,14 @@ with left:
                 st.session_state.results = {}  # old comparisons are stale after a new site
                 st.rerun()
             except Exception as exc:
-                st.error(str(exc))
+                show_helpful_error('draw', exc)
     st.caption("Draw hypothetical footprints, not just map pins. The site map covers the contiguous U.S.; real-world construction would require parcel, zoning and engineering checks.")
 
 with right:
     st.markdown('''<div class="section-head"><div><h2>Your locations</h2>
       <p>Choose 2–5 places to compare side by side.</p></div></div>''', unsafe_allow_html=True)
     if not st.session_state.sites:
-        st.info("To begin: use the rectangle icon on the map, outline Site A, then click **Add drawn location**. Repeat for Site B.")
+        st.info("Start with the rectangle icon on the map. Draw your first location, then click **Add location as Site A** below the map. Repeat for Site B.")
     else:
         entries = []
         for i, site in enumerate(st.session_state.sites):
@@ -576,6 +762,30 @@ with right:
                 f'<div class="site-sub">{escape(label)}</div></div></div>'
             )
         st.markdown('<div class="site-list">' + ''.join(entries) + '</div>', unsafe_allow_html=True)
+    if not st.session_state.is_demo:
+        if len(st.session_state.sites) >= 2:
+            st.success('Your locations are ready. Select **Compare my locations** below.')
+        else:
+            st.caption('Add at least two rectangles before comparing.')
+        analyze = st.button('Compare my locations', type='primary', use_container_width=True,
+            disabled=len(st.session_state.sites) < 2, key='compare_my_locations')
+        if st.session_state.sites:
+            a,b = st.columns(2)
+            with a:
+                if st.button('Remove last', use_container_width=True):
+                    removed=st.session_state.sites.pop()
+                    st.session_state.results.pop(removed['id'],None)
+                    st.session_state.results={}
+                    clear_restoration()
+                    st.rerun()
+            with b:
+                if st.button('Clear all', use_container_width=True):
+                    st.session_state.sites=[]
+                    st.session_state.results={}
+                    clear_restoration()
+                    st.rerun()
+    else:
+        st.info('Sample comparison loaded. Leave example mode above to analyze real user-drawn rectangles.')
     st.markdown("#### What the current screening checks")
     st.markdown("**USGS land cover:** estimates natural or wetland cover inside each footprint.")
     st.markdown("**USFWS wetlands inventory:** checks mapped aquatic overlap and nearby features (within 500 m).")
@@ -585,8 +795,13 @@ if analyze:
     new_results = {}
     progress = st.progress(0, text="Requesting live environmental map data…")
     for i, site in enumerate(st.session_state.sites):
-        with st.spinner(f"Analyzing {site['name']}…"):
-            new_results[site["id"]] = analyze_site(site["feature"])
+        with st.spinner(f"Checking environmental layers for {site['name']}…"):
+            try:
+                new_results[site["id"]] = analyze_site(site["feature"])
+            except Exception as exc:
+                progress.empty()
+                show_helpful_error('compare',exc)
+                st.stop()
         progress.progress((i + 1) / len(st.session_state.sites),
                           text=f"Completed {i + 1} of {len(st.session_state.sites)}")
     st.session_state.results = new_results
@@ -600,49 +815,41 @@ if st.session_state.results:
        </div><span class="section-pill">A = lower concern · F = higher concern</span></div>''', unsafe_allow_html=True)
     completed = [(s, st.session_state.results[s["id"]]) for s in st.session_state.sites
                  if s["id"] in st.session_state.results]
-    st.markdown('<div class="grade-grid">' + ''.join(site_card(s, r) for s, r in completed) + '</div>',
-                unsafe_allow_html=True)
-
-    rows_for_ranking = []
-    report = []
-    for site, result in completed:
-        land = result["land"]
-        wet = result["wet"]
-        grade = result["grade"]
-        rows_for_ranking.append({"id": site["id"], "name": site["name"],
-                                 "flag": result["flag"], "land": land, "wet": wet})
-        report.append({
-            "Site": site["name"],
-            "Preliminary grade": grade["grade"],
-            "Why this grade": grade["explanation"],
-            "Footprint (acres)": result["area_acres"],
-            "Estimated mapped natural / wetland cover (acres)":
-                land["natural_est_acres"] if land else "Unknown",
-            "Developed cover (%)": land["already_developed_pct"] if land else "Unknown",
-            "NWI aquatic overlap (acres)": wet["overlap_acres"] if wet else "Unknown",
-            "Nearest mapped NWI feature (meters)":
-                (wet["nearest_m"] if wet["nearest_m"] is not None
-                 else "None mapped within 500 m") if wet else "Unknown",
-            "Screening flag": result["flag"],
-            "Data gaps": json.dumps(result["issues"]),
-        })
-
-    complete = all(r["grade"]["grade"] != "N/A" for _, r in completed)
-    ranked = compare_sites(rows_for_ranking)
-    if complete and ranked:
-        preferred = ranked[0]
-        preferred_grade = next(r["grade"]["grade"] for s, r in completed
-                               if s["id"] == preferred["id"])
+    conclusion = best_preliminary_option(st.session_state.sites,st.session_state.results)
+    if conclusion.get('winner'):
+        preferred = conclusion['winner']
+        preferred_grade = conclusion['result']['grade']['grade']
+        notes_html = ''.join('<span>• '+escape(note)+'</span>' for note in conclusion['reasons'][:2])
         st.markdown(
-            f'''<div class="comparison-banner"><div style="font-size:2rem">↗</div>
-              <div><strong>First location to investigate: {escape(preferred['name'])} (Grade {escape(preferred_grade)})</strong>
-              <span>This has the lowest mapped concerns among the screened candidates eligible for preliminary comparison. The result is not a finding that the site is environmentally safe or technically feasible.</span></div></div>''',
-            unsafe_allow_html=True,
-        )
-    elif not complete:
-        st.warning("At least one site could not be graded because a required map service failed. Fix the data gaps before choosing a preferred site.")
+            f'<div class="comparison-banner"><div style="font-size:2rem">✓</div>'
+            f'<div><strong>Best preliminary option: {escape(preferred["name"])} · Grade {escape(preferred_grade)}</strong>'
+            f'{notes_html}<span>Not proof of ecological safety or construction feasibility. Five important factors remain unassessed.</span>'
+            '</div></div>',unsafe_allow_html=True)
     else:
-        st.warning("All evaluated sites have major mapped conflicts. Investigate other locations rather than automatically selecting a winner.")
+        st.warning('No clear preliminary winner: '+conclusion['reason'])
+    if st.session_state.is_demo:
+        st.warning('DEMONSTRATION ONLY: the following grades and measurements are synthetic, not live environmental evidence.')
+    st.markdown('<div class="grade-grid">' + ''.join(site_card(s, r) for s, r in completed) + '</div>',unsafe_allow_html=True)
+
+    report=[]
+    for site,result in completed:
+        land = result['land']
+        wet = result['wet']
+        grade = result['grade']
+        report.append({
+            'Site':site['name'],
+            'Preliminary grade':grade['grade'],
+            'Why this grade':grade['explanation'],
+            'Footprint (acres)':result['area_acres'],
+            'Estimated mapped natural / wetland cover (acres)':land['natural_est_acres'] if land else 'Unknown',
+            'Developed cover (%)':land['already_developed_pct'] if land else 'Unknown',
+            'NWI aquatic overlap (acres)':wet['overlap_acres'] if wet else 'Unknown',
+            'Nearest mapped NWI feature (meters)':(
+                (wet['nearest_m'] if wet['nearest_m'] is not None else 'None mapped within 500 m') if wet else 'Unknown'),
+            'Screening flag':result['flag'],
+            'Data gaps':json.dumps(result['issues']),
+            'Data type':'SYNTHETIC EXAMPLE — not GIS measurements' if st.session_state.is_demo else 'Live GIS screening',
+        })
 
     st.markdown("### Detailed comparison")
     st.dataframe(report, use_container_width=True, hide_index=True)
@@ -652,9 +859,20 @@ if st.session_state.results:
     writer.writerows(report)
     st.download_button(
         "↓ Download report (CSV)", output.getvalue(),
-        file_name="ecosite_biodiversity_comparison_v5.csv",
+        file_name="ecosite_biodiversity_comparison_v8.csv",
         mime="text/csv", use_container_width=False,
     )
+    try:
+        pdf_bytes=build_one_page_report(st.session_state.sites, st.session_state.results,
+            community=st.session_state.community,
+            restoration_plan=st.session_state.restoration_plan,
+            demo=st.session_state.is_demo)
+        st.download_button('↓ Download one-page printable PDF (with footprint map)',
+            pdf_bytes,file_name='ecosite_one_page_community_brief.pdf',
+            mime='application/pdf',use_container_width=True,key='pdf_download')
+    except Exception as exc:
+        show_helpful_error('pdf',exc)
+    st.caption('PDF map shows relative site boundaries only; street and ecological map tiles are not included. Synthetic example reports are prominently labeled.')
     for site, result in completed:
         with st.expander(f"View geographic evidence & uncertainties · {site['name']}"):
             st.markdown(f"**Grade {result['grade']['grade']}** — {result['grade']['headline']}")
@@ -675,14 +893,20 @@ if st.session_state.results:
                     f"500 m search zone; {wet['overlap_acres']:.3f} acres overlap the footprint."
                 )
                 st.caption(wet["message"])
-            if result["issues"]:
-                st.error("Unavailable data: " + json.dumps(result["issues"], indent=2))
+            if result['issues']:
+                st.warning('One or more environmental map services did not return usable data. Try comparing again later.')
+                with st.expander('Technical map-service details (for support)'):
+                    st.json(result['issues'])
             st.caption("Unassessed: threatened species, fragmentation, water demand, infrastructure and wildlife disturbance.")
 
 
 # Optional second stage: potential restoration on a distinct patch of land. This
 # never changes the A–F construction-site grading and never certifies offsets.
-if st.session_state.results and len(st.session_state.sites) >= 2:
+if st.session_state.results and st.session_state.is_demo:
+    st.markdown('### Optional next step: restore habitat')
+    st.info('In a real comparison, the Restoration Planner can examine land near the construction site or another candidate property, and suggest conditional native plants. Leave the fictional example to try it with actual mapped sites.')
+
+if st.session_state.results and len(st.session_state.sites) >= 2 and not st.session_state.is_demo:
     st.divider()
     st.markdown('''<div class="restore-hero"><div class="kicker">Optional / Phase 2</div>
        <h3>Explore a biodiversity restoration plan</h3>
@@ -707,240 +931,249 @@ if st.session_state.results and len(st.session_state.sites) >= 2:
 
             st.markdown('### 2 · Choose where to explore restoration')
             modes = {
-                'nearby': 'On-site landscaping / nearby land (draw a new area)',
-                'alternate': 'An unused site from the comparison',
+                'nearby': 'Restore land near my building',
+                'alternate': 'Restore land at another candidate site',
             }
-            if st.session_state.get('restoration_mode') not in modes:
-                st.session_state['restoration_mode'] = 'nearby'
-            mode = st.radio('Restoration location', list(modes),
+            if st.session_state.get('restoration_mode') not in (None,*modes):
+                st.session_state['restoration_mode'] = None
+            st.markdown('**Choose one restoration approach to see the relevant controls.**')
+            mode = st.radio('Where would you like to explore restoration?', list(modes),
                             format_func=lambda k: modes[k],
                             key='restoration_mode', on_change=clear_restoration,
-                            horizontal=True)
-            alternative = None
-            if mode == 'alternate':
-                alternate_ids = [sid for sid in options if sid != development_id]
-                if st.session_state.get('restoration_alternate') not in alternate_ids:
-                    st.session_state['restoration_alternate'] = alternate_ids[0]
-                alt_id = st.selectbox(
-                    'Unused candidate property', alternate_ids,
-                    format_func=lambda sid: sites_by_id[sid]['name'],
-                    key='restoration_alternate', on_change=clear_restoration,
-                )
-                alternative = sites_by_id[alt_id]
-                st.caption('Choose the whole unused candidate for a preliminary review, or draw a smaller part of it. Ownership and availability are not confirmed.')
-                if st.button('Use the whole unused candidate area',
-                             use_container_width=True, key='restoration_entire_candidate'):
-                    try:
-                        validate_restoration_area(development['feature'], alternative['feature'],
-                                                  'alternate', alternative['feature'])
-                        st.session_state.restoration_geometry = alternative['feature']
-                        st.session_state.restoration_source_name = alternative['name']
-                        st.session_state.restoration_reuse_id = alt_id
-                        st.session_state.restoration_analysis = None
-                        st.session_state.restoration_plan = None
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
+                            index=None, horizontal=True)
+            if mode is None:
+                st.info("Choose one of the two options above to continue. Planting and map details will appear after you choose.")
             else:
-                st.caption('Draw a separate potential planting area outside the building footprint, within 500 m. It could be landscaping on the same parcel or nearby land, but parcel boundaries and ownership are not verified. To plan landscaping inside the current outline, first redraw that outline as the actual construction footprint.')
-
-            st.markdown('### 3 · Describe the planting conditions')
-            st.caption('Choose conditions observed on the potential planting area. The map does not measure shade, soil moisture or actual planting suitability.')
-            light_label = {'unknown':'Not checked yet', 'sun':'Mostly full sun',
-                           'shade':'Part shade or shade'}
-            moisture_label = {'unknown':'Not checked yet', 'dry':'Dry or well drained',
-                              'average':'Average / moderately moist', 'wet':'Moist to wet'}
-            lcol, scol = st.columns(2)
-            with lcol:
-                plant_light = st.selectbox('Sun exposure',list(light_label),
-                    format_func=lambda v: light_label[v],key='plant_light',
-                    on_change=clear_restoration_plan_only)
-            with scol:
-                plant_moisture = st.selectbox('Typical soil moisture',list(moisture_label),
-                    format_func=lambda v: moisture_label[v],key='plant_moisture',
-                    on_change=clear_restoration_plan_only)
-            if (st.session_state.state or '').casefold() != 'iowa':
-                st.info('Curated species examples currently cover Iowa only. Plant recommendations use a location check on the selected restoration rectangle when you analyze it; other states require local species guidance.')
-            elif plant_light == 'unknown' or plant_moisture == 'unknown':
-                st.info('To see suggested Iowa native species, select both sun exposure and soil moisture. The suggestions will still require an on-site check.')
-            confirm_iowa = st.checkbox(
-                'I confirm this potential restoration area is in Iowa (backup if map location lookup fails)',
-                value=False, key='plant_iowa_confirmation',
-                on_change=clear_restoration_plan_only,
-                help='A user confirmation is used only if the automatic state lookup is unavailable. A confirmed non-Iowa state takes precedence.',
-            )
-
-            st.markdown('### 4 · Outline land to restore')
-            center_geom = ensure_polygon(development['feature'])
-            restoration_map = folium.Map(location=[center_geom.centroid.y, center_geom.centroid.x],
-                                         zoom_start=14, tiles=None, control_scale=True)
-            folium.TileLayer('OpenStreetMap', name='Street map', overlay=False, show=True).add_to(restoration_map)
-            folium.TileLayer(
-                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri, Maxar, Earthstar Geographics and the GIS User Community',
-                name='Satellite', overlay=False, show=False,
-            ).add_to(restoration_map)
-            # Distinct outline colors, labels and explanatory controls improve clarity.
-            folium.GeoJson(development['feature'], name='Proposed construction footprint',
-                           style_function=lambda _: {'color':'#a32d3c','weight':4,
-                                                     'fillColor':'#d95161','fillOpacity':.22},
-                           tooltip=f"Building footprint: {development['name']}").add_to(restoration_map)
-            bounds = list(center_geom.bounds)
-            if alternative:
-                alt_geom = ensure_polygon(alternative['feature'])
-                folium.GeoJson(alternative['feature'], name='Other candidate for restoration',
-                               style_function=lambda _: {'color':'#2265a0','weight':4,
-                                                         'fillColor':'#3383c4','fillOpacity':.16},
-                               tooltip=f"Potential restoration site: {alternative['name']}").add_to(restoration_map)
-                ab = alt_geom.bounds
-                bounds = [min(bounds[0], ab[0]), min(bounds[1], ab[1]),
-                          max(bounds[2], ab[2]), max(bounds[3], ab[3])]
-            if st.session_state.restoration_geometry:
-                restore_geom = ensure_polygon(st.session_state.restoration_geometry)
-                folium.GeoJson(st.session_state.restoration_geometry, name='Selected restoration area',
-                               style_function=lambda _: {'color':'#0b6e48','weight':4,
-                                                         'fillColor':'#24a46c','fillOpacity':.35},
-                               tooltip='Restoration area for preliminary review').add_to(restoration_map)
-                rb = restore_geom.bounds
-                bounds = [min(bounds[0], rb[0]), min(bounds[1], rb[1]),
-                          max(bounds[2], rb[2]), max(bounds[3], rb[3])]
-            restoration_map.fit_bounds([[bounds[1],bounds[0]],[bounds[3],bounds[2]]], padding=(40,40))
-            Draw(export=False, draw_options={
-                'polyline':False,'marker':False,'circle':False,'circlemarker':False,
-                'polygon':False,
-                'rectangle':{'shapeOptions':{'color':'#0b6e48'}},
-            }, edit_options={'edit':False,'remove':False}).add_to(restoration_map)
-            folium.LayerControl(collapsed=True).add_to(restoration_map)
-            restore_map_response = st_folium(restoration_map, height=390,
-                                             use_container_width=True,
-                                             key='restoration_map_v5',
-                                             returned_objects=['last_active_drawing'])
-            restored_drawn = (restore_map_response or {}).get('last_active_drawing')
-            b1,b2 = st.columns([2,1])
-            with b1:
-                if st.button('✓ Use drawn restoration area', use_container_width=True,
-                             key='confirm_restoration_rectangle'):
-                    if not restored_drawn:
-                        st.warning('Use the rectangle tool in the top-left of the map before clicking this button.')
-                    else:
+                alternative = None
+                if mode == 'alternate':
+                    alternate_ids = [sid for sid in options if sid != development_id]
+                    if st.session_state.get('restoration_alternate') not in alternate_ids:
+                        st.session_state['restoration_alternate'] = alternate_ids[0]
+                    alt_id = st.selectbox(
+                        'Unused candidate property', alternate_ids,
+                        format_func=lambda sid: sites_by_id[sid]['name'],
+                        key='restoration_alternate', on_change=clear_restoration,
+                    )
+                    alternative = sites_by_id[alt_id]
+                    st.caption('Choose the whole unused candidate for a preliminary review, or draw a smaller part of it. Ownership and availability are not confirmed.')
+                    if st.button('Use the whole unused candidate area',
+                                 use_container_width=True, key='restoration_entire_candidate'):
                         try:
-                            polygon = ensure_polygon(restored_drawn)
-                            feature = {'type':'Feature','geometry':mapping(polygon),'properties':{}}
-                            validate_restoration_area(
-                                development['feature'], feature, mode,
-                                alternative['feature'] if alternative else None)
-                            st.session_state.restoration_geometry = feature
-                            st.session_state.restoration_source_name = (
-                                f"Part of {alternative['name']}" if alternative else
-                                f"Nearby land by {development['name']}")
-                            st.session_state.restoration_reuse_id = None
-                            st.session_state.restoration_plan = None
+                            validate_restoration_area(development['feature'], alternative['feature'],
+                                                      'alternate', alternative['feature'])
+                            st.session_state.restoration_geometry = alternative['feature']
+                            st.session_state.restoration_source_name = alternative['name']
+                            st.session_state.restoration_reuse_id = alt_id
                             st.session_state.restoration_analysis = None
+                            st.session_state.restoration_plan = None
                             st.rerun()
                         except ValueError as exc:
-                            st.error(str(exc))
-            with b2:
-                if st.button('Clear restoration area', use_container_width=True,
-                             key='clear_restoration_area'):
-                    clear_restoration()
-                    st.rerun()
-            st.caption('Red = proposed building footprint · Blue = alternate compared site · Green = restoration area. New plantings must be planned outside the building footprint; the map does not verify property ownership.')
+                            show_helpful_error('restore', exc)
+                else:
+                    st.caption('Draw a separate potential planting area outside the building footprint, within 500 m. It could be landscaping on the same parcel or nearby land, but parcel boundaries and ownership are not verified. To plan landscaping inside the current outline, first redraw that outline as the actual construction footprint.')
 
-            area_feature = st.session_state.restoration_geometry
-            if area_feature:
-                try:
-                    placement = validate_restoration_area(
-                        development['feature'], area_feature, mode,
-                        alternative['feature'] if alternative else None)
-                    st.success(f"Restoration rectangle selected: {placement['area_acres']:.2f} acres · approximately {placement['distance_from_build_m']} m from the construction footprint")
-                    if st.button('Analyze restoration opportunities', type='primary',
-                                 use_container_width=True, key='analyze_restoration'):
-                        with st.spinner('Checking the mapped vegetation and aquatic features…'):
-                            reuse_id = st.session_state.restoration_reuse_id
-                            if reuse_id and reuse_id == (alternative or {}).get('id'):
-                                previous = st.session_state.results[reuse_id]
-                                assessment = {
-                                    'area_acres': previous['area_acres'],
-                                    'land': previous['land'], 'wet': previous['wet'],
-                                    'issues': previous['issues'],
-                                    'analyzed_utc': previous['analyzed_utc'],
-                                }
-                            else:
-                                assessment = analyze_restoration_area(area_feature)
-                            # The actual selected restoration polygon can be far from
-                            # the searched town; reverse geocode its center for plant state.
-                            # If unavailable, do not attribute Iowa plant nativity to it.
-                            restoration_polygon = ensure_polygon(area_feature)
-                            try:
-                                plant_state = state_at_coordinates(
-                                    restoration_polygon.centroid.y,
-                                    restoration_polygon.centroid.x)
-                            except (requests.RequestException, ValueError):
-                                plant_state = None
-                            if plant_state is None and confirm_iowa:
-                                plant_state = 'Iowa'  # explicit user-confirmed fallback
-                            plan = make_restoration_plan(
-                                st.session_state.results[development_id], assessment,
-                                placement, development_name=development['name'],
-                                location_name=st.session_state.restoration_source_name,
-                                plant_context={'state': plant_state,
-                                               'sunlight':plant_light, 'soil_moisture':plant_moisture},
-                            )
-                            st.session_state.restoration_analysis = assessment
-                            st.session_state.restoration_plan = plan
-                        st.rerun()
-                except ValueError as exc:
-                    st.error(f'The restoration rectangle must be updated: {exc}')
-
-            plan = st.session_state.restoration_plan
-            if plan:
-                st.divider()
-                st.markdown('### 5 · Your preliminary restoration opportunity plan')
-                acreage = f"{plan['restoration_acres']:.2f} acres"
-                potential = (f"~{plan['estimated_modifiable_cover_acres']:.2f} acres" if
-                             plan['estimated_modifiable_cover_acres'] is not None else 'Unknown')
-                st.markdown(f'''<div class="meta-strip">
-                  <div class="restoration-stat"><div class="value">{escape(acreage)}</div><div class="label">Area explored</div><div class="description">User-selected restoration rectangle</div></div>
-                  <div class="restoration-stat"><div class="value">{escape(potential)}</div><div class="label">Potentially modifiable mapped cover</div><div class="description">Estimated turf/open developed + agricultural cover — not verified plantable area</div></div>
-                  <div class="restoration-stat"><div class="value">Not calculated</div><div class="label">Verified biodiversity offset</div><div class="description">Requires specialist evaluation and ecological equivalence</div></div>
-                </div>''',unsafe_allow_html=True)
-                st.markdown('**Possible actions to investigate**')
-                if plan['development_mapped_natural_acres'] is not None:
-                    st.info(
-                        f"The construction footprint for **{plan['development_name']}** includes about "
-                        f"**{plan['development_mapped_natural_acres']:.2f} acres** of mapped natural/wetland cover. "
-                        'This cannot be directly balanced against potential planting acres: "acres restored" do not equal "acres of biodiversity loss offset."'
+                with st.expander('Optional planting details: sun and soil moisture', expanded=False):
+                    st.markdown('Planting choices are optional. Open the settings below for an Iowa native-plant shortlist.')
+                    st.caption('Choose conditions observed on the potential planting area. The map does not measure shade, soil moisture or actual planting suitability.')
+                    light_label = {'unknown':'Not checked yet', 'sun':'Mostly full sun',
+                                   'shade':'Part shade or shade'}
+                    moisture_label = {'unknown':'Not checked yet', 'dry':'Dry or well drained',
+                                      'average':'Average / moderately moist', 'wet':'Moist to wet'}
+                    lcol, scol = st.columns(2)
+                    with lcol:
+                        plant_light = st.selectbox('Sun exposure',list(light_label),
+                            format_func=lambda v: light_label[v],key='plant_light',
+                            on_change=clear_restoration_plan_only)
+                    with scol:
+                        plant_moisture = st.selectbox('Typical soil moisture',list(moisture_label),
+                            format_func=lambda v: moisture_label[v],key='plant_moisture',
+                            on_change=clear_restoration_plan_only)
+                    if (st.session_state.state or '').casefold() != 'iowa':
+                        st.info('Curated species examples currently cover Iowa only. Plant recommendations use a location check on the selected restoration rectangle when you analyze it; other states require local species guidance.')
+                    elif plant_light == 'unknown' or plant_moisture == 'unknown':
+                        st.info('To see suggested Iowa native species, select both sun exposure and soil moisture. The suggestions will still require an on-site check.')
+                    confirm_iowa = st.checkbox(
+                        'I confirm this potential restoration area is in Iowa (backup if map location lookup fails)',
+                        value=False, key='plant_iowa_confirmation',
+                        on_change=clear_restoration_plan_only,
+                        help='A user confirmation is used only if the automatic state lookup is unavailable. A confirmed non-Iowa state takes precedence.',
                     )
-                cards = []
-                for action in plan['actions']:
-                    cards.append(f'''<article class="restoration-action"><span class="small-badge">{escape(action['step'])}</span>
-                        <h4>{escape(action['title'])}</h4><p>{escape(action['rationale'])}</p>
-                        <div class="verify"><strong>Check first:</strong> {escape(action['verify'])}</div></article>''')
-                st.markdown(''.join(cards), unsafe_allow_html=True)
-                st.markdown('### Native plants to investigate')
-                planting = plan['native_plant_guidance']
-                st.markdown(f'<div class="plant-guidance"><strong>Planting guidance:</strong> {escape(planting["note"])}</div>',unsafe_allow_html=True)
-                if planting['items']:
-                    st.markdown('<div class="plant-header">Iowa native-plant shortlist · verify locally before buying seed or planting</div>',unsafe_allow_html=True)
-                    plants_html=[]
-                    for plant in planting['items']:
-                        plants_html.append(
-                            f'<article class="plant-entry"><div class="plant-name">{escape(plant["common"])}</div>'
-                            f'<div class="plant-scientific">{escape(plant["scientific"])}</div>'
-                            f'<div class="plant-role">{escape(plant["role"])}</div></article>')
-                    st.markdown('<div class="plant-grid">'+''.join(plants_html)+'</div>',unsafe_allow_html=True)
-                if planting['sources']:
-                    with st.expander('Plant sources and verification guidance'):
-                        for source in planting['sources']:
-                            st.markdown(f'- [{source["title"]}]({source["url"]})')
-                        st.caption('Use locally sourced native seed, protect intact ecosystems, and ask a local land manager or conservation biologist to approve the final species mix.')
-                st.warning('Important limits: ' + ' '.join(plan['warnings']))
-                if plan['issues']:
-                    st.error('Map data gaps: ' + '; '.join(f'{k}: {v}' for k,v in plan['issues'].items()))
-                st.download_button('↓ Download restoration plan (.md)', plan_markdown(plan),
-                                   file_name='ecosite_restoration_opportunity_plan.md',
-                                   mime='text/markdown', use_container_width=True)
-                st.caption('Sources: USGS annual land cover, USFWS aquatic map, Society for Ecological Restoration (2026), and IUCN mitigation hierarchy. No ecological equivalence, cost or suitability is certified.')
+
+                st.markdown('### 4 · Outline land to restore')
+                center_geom = ensure_polygon(development['feature'])
+                restoration_map = folium.Map(location=[center_geom.centroid.y, center_geom.centroid.x],
+                                             zoom_start=14, tiles=None, control_scale=True)
+                folium.TileLayer('OpenStreetMap', name='Street map', overlay=False, show=True).add_to(restoration_map)
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri, Maxar, Earthstar Geographics and the GIS User Community',
+                    name='Satellite', overlay=False, show=False,
+                ).add_to(restoration_map)
+                # Distinct outline colors, labels and explanatory controls improve clarity.
+                folium.GeoJson(development['feature'], name='Proposed construction footprint',
+                               style_function=lambda _: {'color':'#a32d3c','weight':4,
+                                                         'fillColor':'#d95161','fillOpacity':.22},
+                               tooltip=f"Building footprint: {development['name']}").add_to(restoration_map)
+                bounds = list(center_geom.bounds)
+                if alternative:
+                    alt_geom = ensure_polygon(alternative['feature'])
+                    folium.GeoJson(alternative['feature'], name='Other candidate for restoration',
+                                   style_function=lambda _: {'color':'#2265a0','weight':4,
+                                                             'fillColor':'#3383c4','fillOpacity':.16},
+                                   tooltip=f"Potential restoration site: {alternative['name']}").add_to(restoration_map)
+                    ab = alt_geom.bounds
+                    bounds = [min(bounds[0], ab[0]), min(bounds[1], ab[1]),
+                              max(bounds[2], ab[2]), max(bounds[3], ab[3])]
+                if st.session_state.restoration_geometry:
+                    restore_geom = ensure_polygon(st.session_state.restoration_geometry)
+                    folium.GeoJson(st.session_state.restoration_geometry, name='Selected restoration area',
+                                   style_function=lambda _: {'color':'#0b6e48','weight':4,
+                                                             'fillColor':'#24a46c','fillOpacity':.35},
+                                   tooltip='Restoration area for preliminary review').add_to(restoration_map)
+                    rb = restore_geom.bounds
+                    bounds = [min(bounds[0], rb[0]), min(bounds[1], rb[1]),
+                              max(bounds[2], rb[2]), max(bounds[3], rb[3])]
+                restoration_map.fit_bounds([[bounds[1],bounds[0]],[bounds[3],bounds[2]]], padding=(40,40))
+                Draw(export=False, draw_options={
+                    'polyline':False,'marker':False,'circle':False,'circlemarker':False,
+                    'polygon':False,
+                    'rectangle':{'shapeOptions':{'color':'#0b6e48'}},
+                }, edit_options={'edit':False,'remove':False}).add_to(restoration_map)
+                folium.LayerControl(collapsed=True).add_to(restoration_map)
+                restore_map_response = st_folium(restoration_map, height=390,
+                                                 use_container_width=True,
+                                                 key=f'restoration_map_v8_{mode}_{development_id}_{len(options)}',
+                                                 returned_objects=['last_active_drawing'])
+                restored_drawn = (restore_map_response or {}).get('last_active_drawing')
+                b1,b2 = st.columns([2,1])
+                with b1:
+                    if st.button('✓ Use drawn restoration area', use_container_width=True,
+                                 key='confirm_restoration_rectangle'):
+                        if not restored_drawn:
+                            st.warning('Use the rectangle tool in the top-left of the map before clicking this button.')
+                        else:
+                            try:
+                                polygon = ensure_polygon(restored_drawn)
+                                feature = {'type':'Feature','geometry':mapping(polygon),'properties':{}}
+                                validate_restoration_area(
+                                    development['feature'], feature, mode,
+                                    alternative['feature'] if alternative else None)
+                                st.session_state.restoration_geometry = feature
+                                st.session_state.restoration_source_name = (
+                                    f"Part of {alternative['name']}" if alternative else
+                                    f"Nearby land by {development['name']}")
+                                st.session_state.restoration_reuse_id = None
+                                st.session_state.restoration_plan = None
+                                st.session_state.restoration_analysis = None
+                                st.rerun()
+                            except ValueError as exc:
+                                show_helpful_error('restore', exc)
+                with b2:
+                    if st.button('Clear restoration area', use_container_width=True,
+                                 key='clear_restoration_area'):
+                        clear_restoration()
+                        st.rerun()
+                st.caption('Red = proposed building footprint · Blue = alternate compared site · Green = restoration area. New plantings must be planned outside the building footprint; the map does not verify property ownership.')
+
+                area_feature = st.session_state.restoration_geometry
+                if area_feature:
+                    try:
+                        placement = validate_restoration_area(
+                            development['feature'], area_feature, mode,
+                            alternative['feature'] if alternative else None)
+                        st.success(f"Restoration rectangle selected: {placement['area_acres']:.2f} acres · approximately {placement['distance_from_build_m']} m from the construction footprint")
+                        if st.button('Analyze restoration opportunities', type='primary',
+                                     use_container_width=True, key='analyze_restoration'):
+                            with st.spinner('Checking the mapped vegetation and aquatic features…'):
+                                reuse_id = st.session_state.restoration_reuse_id
+                                if reuse_id and reuse_id == (alternative or {}).get('id'):
+                                    previous = st.session_state.results[reuse_id]
+                                    assessment = {
+                                        'area_acres': previous['area_acres'],
+                                        'land': previous['land'], 'wet': previous['wet'],
+                                        'issues': previous['issues'],
+                                        'analyzed_utc': previous['analyzed_utc'],
+                                    }
+                                else:
+                                    assessment = analyze_restoration_area(area_feature)
+                                # The actual selected restoration polygon can be far from
+                                # the searched town; reverse geocode its center for plant state.
+                                # If unavailable, do not attribute Iowa plant nativity to it.
+                                restoration_polygon = ensure_polygon(area_feature)
+                                try:
+                                    plant_state = state_at_coordinates(
+                                        restoration_polygon.centroid.y,
+                                        restoration_polygon.centroid.x)
+                                except (requests.RequestException, ValueError):
+                                    plant_state = None
+                                if plant_state is None and confirm_iowa:
+                                    plant_state = 'Iowa'  # explicit user-confirmed fallback
+                                plan = make_restoration_plan(
+                                    st.session_state.results[development_id], assessment,
+                                    placement, development_name=development['name'],
+                                    location_name=st.session_state.restoration_source_name,
+                                    plant_context={'state': plant_state,
+                                                   'sunlight':plant_light, 'soil_moisture':plant_moisture},
+                                )
+                                st.session_state.restoration_analysis = assessment
+                                st.session_state.restoration_plan = plan
+                            st.rerun()
+                        # A remote request or unexpected parsing problem is not a
+                        # user mistake; report what to try, not a raw traceback.
+                    except Exception as exc:
+                        show_helpful_error('restore', exc)
+
+                plan = st.session_state.restoration_plan
+                if plan:
+                    st.divider()
+                    st.markdown('### 5 · Your preliminary restoration opportunity plan')
+                    acreage = f"{plan['restoration_acres']:.2f} acres"
+                    potential = (f"~{plan['estimated_modifiable_cover_acres']:.2f} acres" if
+                                 plan['estimated_modifiable_cover_acres'] is not None else 'Unknown')
+                    st.markdown(f'''<div class="meta-strip">
+                      <div class="restoration-stat"><div class="value">{escape(acreage)}</div><div class="label">Area explored</div><div class="description">User-selected restoration rectangle</div></div>
+                      <div class="restoration-stat"><div class="value">{escape(potential)}</div><div class="label">Potentially modifiable mapped cover</div><div class="description">Estimated turf/open developed + agricultural cover — not verified plantable area</div></div>
+                      <div class="restoration-stat"><div class="value">Not calculated</div><div class="label">Verified biodiversity offset</div><div class="description">Requires specialist evaluation and ecological equivalence</div></div>
+                    </div>''',unsafe_allow_html=True)
+                    st.markdown('**Possible actions to investigate**')
+                    if plan['development_mapped_natural_acres'] is not None:
+                        st.info(
+                            f"The construction footprint for **{plan['development_name']}** includes about "
+                            f"**{plan['development_mapped_natural_acres']:.2f} acres** of mapped natural/wetland cover. "
+                            'This cannot be directly balanced against potential planting acres: "acres restored" do not equal "acres of biodiversity loss offset."'
+                        )
+                    cards = []
+                    for action in plan['actions']:
+                        cards.append(f'''<article class="restoration-action"><span class="small-badge">{escape(action['step'])}</span>
+                            <h4>{escape(action['title'])}</h4><p>{escape(action['rationale'])}</p>
+                            <div class="verify"><strong>Check first:</strong> {escape(action['verify'])}</div></article>''')
+                    st.markdown(''.join(cards), unsafe_allow_html=True)
+                    st.markdown('### Native plants to investigate')
+                    planting = plan['native_plant_guidance']
+                    st.markdown(f'<div class="plant-guidance"><strong>Planting guidance:</strong> {escape(planting["note"])}</div>',unsafe_allow_html=True)
+                    if planting['items']:
+                        st.markdown('<div class="plant-header">Iowa native-plant shortlist · verify locally before buying seed or planting</div>',unsafe_allow_html=True)
+                        plants_html=[]
+                        for plant in planting['items']:
+                            plants_html.append(
+                                f'<article class="plant-entry"><div class="plant-name">{escape(plant["common"])}</div>'
+                                f'<div class="plant-scientific">{escape(plant["scientific"])}</div>'
+                                f'<div class="plant-role">{escape(plant["role"])}</div></article>')
+                        st.markdown('<div class="plant-grid">'+''.join(plants_html)+'</div>',unsafe_allow_html=True)
+                    if planting['sources']:
+                        with st.expander('Plant sources and verification guidance'):
+                            for source in planting['sources']:
+                                st.markdown(f'- [{source["title"]}]({source["url"]})')
+                            st.caption('Use locally sourced native seed, protect intact ecosystems, and ask a local land manager or conservation biologist to approve the final species mix.')
+                    st.warning('Important limits: ' + ' '.join(plan['warnings']))
+                    if plan['issues']:
+                        st.warning('Some map services were unavailable. Restoration actions are preliminary and may be incomplete.')
+                        with st.expander('Technical map-service details (for support)'):
+                            st.json(plan['issues'])
+                    st.download_button('↓ Download restoration plan (.md)', plan_markdown(plan),
+                                       file_name='ecosite_restoration_opportunity_plan.md',
+                                       mime='text/markdown', use_container_width=True)
+                    st.caption('Sources: USGS annual land cover, USFWS aquatic map, Society for Ecological Restoration (2026), and IUCN mitigation hierarchy. No ecological equivalence, cost or suitability is certified.')
     else:
         st.caption('Restoration planning is optional. Open it only after comparing potential construction locations.')
 
