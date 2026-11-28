@@ -15,6 +15,10 @@ from shapely.geometry import mapping
 from streamlit_folium import st_folium
 
 from model import NLCD_YEAR, analyze_site, compare_sites, ensure_polygon
+from restoration import (
+    analyze_restoration_area, make_restoration_plan, plan_markdown,
+    validate_restoration_area,
+)
 
 st.set_page_config(
     page_title="EcoSite AI | Biodiversity site comparison",
@@ -145,6 +149,25 @@ st.markdown(
     [data-testid="stMain"] table td {background:#fff;color:var(--ink) !important;}
     [data-testid="stMain"] table :is(th,td) {border-color:#a8bfb1 !important;}
 
+    /* Restoration planner — high contrast, compatible with light/dark browser settings. */
+    .restore-hero {background:#e5f2e9;border:2px solid #9fbea9;
+      border-radius:16px;padding:21px 23px;margin:14px 0 18px;color:#15372a !important;}
+    .restore-hero .kicker {font-size:.9rem;letter-spacing:.09em;text-transform:uppercase;
+      font-weight:850;color:#19503b !important;margin-bottom:8px;}
+    .restore-hero h3 {font-size:1.42rem;color:#13382b !important;margin:0 0 8px;}
+    .restore-hero p {font-size:1.05rem;line-height:1.65;color:#244438 !important;margin:0;}
+    .restoration-stat {background:#ffffff;border:1px solid #9ebcad;border-radius:15px;
+      padding:16px 18px;min-height:140px;}
+    .restoration-stat .value {font-size:2.15rem;font-weight:850;color:#134b36 !important;}
+    .restoration-stat .label {font-size:1.02rem;font-weight:800;color:#1a3c2b !important;}
+    .restoration-stat .description {font-size:.95rem;line-height:1.55;color:#2e4a3d !important;}
+    .restoration-action {background:#fff;border:1px solid #adbeae;border-radius:12px;
+      padding:16px 17px;margin:11px 0;}
+    .restoration-action .small-badge {font-size:.85rem;font-weight:850;color:#164935 !important;
+      background:#dcece0;border-radius:20px;padding:4px 9px;display:inline-block;margin-bottom:8px;}
+    .restoration-action h4 {font-size:1.1rem;color:#15362b !important;margin:0 0 6px;}
+    .restoration-action p {font-size:1.01rem;line-height:1.62;color:#263c32 !important;margin:0 0 7px;}
+    .restoration-action .verify {font-size:.98rem;color:#30483d !important;line-height:1.6;}
     /* Custom UI: explicit foreground colors on every surface. */
     h1,h2,h3,p {overflow-wrap:anywhere;}
     h2 {font-size:1.5rem !important;letter-spacing:-.025em;color:var(--ink);}
@@ -240,6 +263,12 @@ st.markdown(
 )
 
 for key, default in (
+    ("restoration_geometry", None),
+    ("restoration_plan", None),
+    ("restoration_analysis", None),
+    ("restoration_source_name", None),
+    ("restoration_reuse_id", None),
+    ("restoration_enabled", False),
     ("sites", []),
     ("results", {}),
     ("center", [42.5349, -92.4453]),
@@ -263,6 +292,13 @@ def geocode(place: str):
     if not data:
         raise ValueError("No matching community found. Include city and state.")
     return [float(data[0]["lat"]), float(data[0]["lon"])]
+
+
+def clear_restoration():
+    """Discard stale restoration output if a site or target location changes."""
+    for name in ("restoration_geometry", "restoration_plan", "restoration_analysis",
+                 "restoration_source_name", "restoration_reuse_id"):
+        st.session_state[name] = None
 
 
 PALETTE = ["#107b6b", "#e99649", "#6d67bf", "#2c74bd", "#c45e8c"]
@@ -325,13 +361,15 @@ with st.sidebar:
         if st.button("Remove last site", use_container_width=True):
             removed = st.session_state.sites.pop()
             st.session_state.results.pop(removed["id"], None)
+            clear_restoration()
             st.rerun()
         if st.button("Clear all", use_container_width=True):
             st.session_state.sites = []
             st.session_state.results = {}
+            clear_restoration()
             st.rerun()
     st.divider()
-    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 4</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sidebar-version">FIRST LEGO LEAGUE · RESEARCH PROTOTYPE · VERSION 5</p>', unsafe_allow_html=True)
 
 st.markdown(
     '''<div class="hero">
@@ -340,7 +378,7 @@ st.markdown(
       <p class="hero-lead">Compare potential data-center locations using real environmental map layers—and understand what each choice could mean for local wildlife and habitats.</p>
       <p class="hero-support"><strong>Why it matters:</strong> Data centers need space and supporting infrastructure. Building in the wrong place can remove natural habitat and affect wetlands or waterways. Choosing locations carefully can help communities avoid unnecessary damage to biodiversity.</p>
       <p class="hero-support"><strong>How EcoSite AI helps:</strong> Draw two to five possible building sites on the map. The tool compares public land-cover and mapped aquatic-habitat data, then gives each location a preliminary <strong>A–F environmental grade</strong> and a short explanation of its strengths and risks. It's a starting point for better questions—not a final construction approval.</p>
-      <div class="chips"><span class="chip">✓ Compare 2–5 sites</span><span class="chip">✓ A–F preliminary grades</span><span class="chip">✓ Evidence-based explanations</span></div>
+      <div class="chips"><span class="chip">✓ Compare 2–5 sites</span><span class="chip">✓ A–F preliminary grades</span><span class="chip">✓ Optional restoration planner</span></div>
     </div>''',
     unsafe_allow_html=True,
 )
@@ -451,7 +489,7 @@ with right:
                 f'<div class="site-sub">{escape(label)}</div></div></div>'
             )
         st.markdown('<div class="site-list">' + ''.join(entries) + '</div>', unsafe_allow_html=True)
-    st.markdown("#### What the first version checks")
+    st.markdown("#### What the current screening checks")
     st.markdown("**USGS land cover:** estimates natural or wetland cover inside each footprint.")
     st.markdown("**USFWS wetlands inventory:** checks mapped aquatic overlap and nearby features (within 500 m).")
     st.markdown('''<div class="notice"><strong>Research preview:</strong> The A–F grades are based only on these two mapped layers. They do not assess threatened species, connectivity, water use, utilities or noise, and do not establish whether construction is safe or permitted.</div>''', unsafe_allow_html=True)
@@ -465,6 +503,7 @@ if analyze:
         progress.progress((i + 1) / len(st.session_state.sites),
                           text=f"Completed {i + 1} of {len(st.session_state.sites)}")
     st.session_state.results = new_results
+    clear_restoration()
     st.rerun()
 
 if st.session_state.results:
@@ -526,7 +565,7 @@ if st.session_state.results:
     writer.writerows(report)
     st.download_button(
         "↓ Download report (CSV)", output.getvalue(),
-        file_name="ecosite_biodiversity_comparison_v4.csv",
+        file_name="ecosite_biodiversity_comparison_v5.csv",
         mime="text/csv", use_container_width=False,
     )
     for site, result in completed:
@@ -552,6 +591,213 @@ if st.session_state.results:
             if result["issues"]:
                 st.error("Unavailable data: " + json.dumps(result["issues"], indent=2))
             st.caption("Unassessed: threatened species, fragmentation, water demand, infrastructure and wildlife disturbance.")
+
+
+# Optional second stage: potential restoration on a distinct patch of land. This
+# never changes the A–F construction-site grading and never certifies offsets.
+if st.session_state.results and len(st.session_state.sites) >= 2:
+    st.divider()
+    st.markdown('''<div class="restore-hero"><div class="kicker">Optional / Phase 2</div>
+       <h3>Explore a biodiversity restoration plan</h3>
+       <p>After comparing places to build, investigate how your community could protect or restore habitat on nearby land or on one of the other candidate sites. The planner uses mapped land cover to suggest actions to investigate — it does <strong>not</strong> calculate a certified biodiversity offset or erase damage from building.</p></div>''', unsafe_allow_html=True)
+    st.toggle('Open the optional Restoration Planner', key='restoration_enabled')
+    if st.session_state.restoration_enabled:
+        with st.container(border=True):
+            sites_by_id = {site['id']: site for site in st.session_state.sites}
+            options = [site['id'] for site in st.session_state.sites
+                       if site['id'] in st.session_state.results]
+            if st.session_state.get('restoration_build_site') not in options:
+                st.session_state['restoration_build_site'] = options[0]
+            st.markdown('### 1 · Choose the data-center development site')
+            development_id = st.selectbox(
+                'Which compared location would be developed?', options,
+                format_func=lambda sid: sites_by_id[sid]['name'],
+                key='restoration_build_site', on_change=clear_restoration,
+            )
+            development = sites_by_id[development_id]
+            build_grade = st.session_state.results[development_id]['grade']['grade']
+            st.caption(f'This development site retains its original grade ({build_grade}). Restoration ideas cannot change that construction grade.')
+
+            st.markdown('### 2 · Choose where to explore restoration')
+            modes = {
+                'nearby': 'On-site landscaping / nearby land (draw a new area)',
+                'alternate': 'An unused site from the comparison',
+            }
+            if st.session_state.get('restoration_mode') not in modes:
+                st.session_state['restoration_mode'] = 'nearby'
+            mode = st.radio('Restoration location', list(modes),
+                            format_func=lambda k: modes[k],
+                            key='restoration_mode', on_change=clear_restoration,
+                            horizontal=True)
+            alternative = None
+            if mode == 'alternate':
+                alternate_ids = [sid for sid in options if sid != development_id]
+                if st.session_state.get('restoration_alternate') not in alternate_ids:
+                    st.session_state['restoration_alternate'] = alternate_ids[0]
+                alt_id = st.selectbox(
+                    'Unused candidate property', alternate_ids,
+                    format_func=lambda sid: sites_by_id[sid]['name'],
+                    key='restoration_alternate', on_change=clear_restoration,
+                )
+                alternative = sites_by_id[alt_id]
+                st.caption('Choose the whole unused candidate for a preliminary review, or draw a smaller part of it. Ownership and availability are not confirmed.')
+                if st.button('Use the whole unused candidate area',
+                             use_container_width=True, key='restoration_entire_candidate'):
+                    try:
+                        validate_restoration_area(development['feature'], alternative['feature'],
+                                                  'alternate', alternative['feature'])
+                        st.session_state.restoration_geometry = alternative['feature']
+                        st.session_state.restoration_source_name = alternative['name']
+                        st.session_state.restoration_reuse_id = alt_id
+                        st.session_state.restoration_analysis = None
+                        st.session_state.restoration_plan = None
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+            else:
+                st.caption('Draw a separate potential planting area outside the building footprint, within 500 m. It could be landscaping on the same parcel or nearby land, but parcel boundaries and ownership are not verified. To plan landscaping inside the current outline, first redraw that outline as the actual construction footprint.')
+
+            st.markdown('### 3 · Outline land to restore')
+            center_geom = ensure_polygon(development['feature'])
+            restoration_map = folium.Map(location=[center_geom.centroid.y, center_geom.centroid.x],
+                                         zoom_start=14, tiles='OpenStreetMap', control_scale=True)
+            folium.TileLayer(
+                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri, Maxar, Earthstar Geographics and the GIS User Community',
+                name='Satellite', overlay=False,
+            ).add_to(restoration_map)
+            # Distinct outline colors, labels and explanatory controls improve clarity.
+            folium.GeoJson(development['feature'], name='Proposed construction footprint',
+                           style_function=lambda _: {'color':'#a32d3c','weight':4,
+                                                     'fillColor':'#d95161','fillOpacity':.22},
+                           tooltip=f"Building footprint: {development['name']}").add_to(restoration_map)
+            bounds = list(center_geom.bounds)
+            if alternative:
+                alt_geom = ensure_polygon(alternative['feature'])
+                folium.GeoJson(alternative['feature'], name='Other candidate for restoration',
+                               style_function=lambda _: {'color':'#2265a0','weight':4,
+                                                         'fillColor':'#3383c4','fillOpacity':.16},
+                               tooltip=f"Potential restoration site: {alternative['name']}").add_to(restoration_map)
+                ab = alt_geom.bounds
+                bounds = [min(bounds[0], ab[0]), min(bounds[1], ab[1]),
+                          max(bounds[2], ab[2]), max(bounds[3], ab[3])]
+            if st.session_state.restoration_geometry:
+                restore_geom = ensure_polygon(st.session_state.restoration_geometry)
+                folium.GeoJson(st.session_state.restoration_geometry, name='Selected restoration area',
+                               style_function=lambda _: {'color':'#0b6e48','weight':4,
+                                                         'fillColor':'#24a46c','fillOpacity':.35},
+                               tooltip='Restoration area for preliminary review').add_to(restoration_map)
+                rb = restore_geom.bounds
+                bounds = [min(bounds[0], rb[0]), min(bounds[1], rb[1]),
+                          max(bounds[2], rb[2]), max(bounds[3], rb[3])]
+            restoration_map.fit_bounds([[bounds[1],bounds[0]],[bounds[3],bounds[2]]], padding=(40,40))
+            Draw(export=False, draw_options={
+                'polyline':False,'marker':False,'circle':False,'circlemarker':False,
+                'polygon':{'shapeOptions':{'color':'#0b6e48'}},
+                'rectangle':{'shapeOptions':{'color':'#0b6e48'}},
+            }, edit_options={'edit':False,'remove':False}).add_to(restoration_map)
+            folium.LayerControl(collapsed=True).add_to(restoration_map)
+            restore_map_response = st_folium(restoration_map, height=390,
+                                             use_container_width=True,
+                                             key='restoration_map_v5',
+                                             returned_objects=['last_active_drawing'])
+            restored_drawn = (restore_map_response or {}).get('last_active_drawing')
+            b1,b2 = st.columns([2,1])
+            with b1:
+                if st.button('✓ Use drawn restoration area', use_container_width=True,
+                             key='confirm_restoration_polygon'):
+                    if not restored_drawn:
+                        st.warning('Use the polygon or rectangle tool in the top-left of the map before clicking this button.')
+                    else:
+                        try:
+                            polygon = ensure_polygon(restored_drawn)
+                            feature = {'type':'Feature','geometry':mapping(polygon),'properties':{}}
+                            validate_restoration_area(
+                                development['feature'], feature, mode,
+                                alternative['feature'] if alternative else None)
+                            st.session_state.restoration_geometry = feature
+                            st.session_state.restoration_source_name = (
+                                f"Part of {alternative['name']}" if alternative else
+                                f"Nearby land by {development['name']}")
+                            st.session_state.restoration_reuse_id = None
+                            st.session_state.restoration_plan = None
+                            st.session_state.restoration_analysis = None
+                            st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
+            with b2:
+                if st.button('Clear restoration area', use_container_width=True,
+                             key='clear_restoration_area'):
+                    clear_restoration()
+                    st.rerun()
+            st.caption('Red = proposed building footprint · Blue = alternate compared site · Green = restoration area. New plantings must be planned outside the building footprint; the map does not verify property ownership.')
+
+            area_feature = st.session_state.restoration_geometry
+            if area_feature:
+                try:
+                    placement = validate_restoration_area(
+                        development['feature'], area_feature, mode,
+                        alternative['feature'] if alternative else None)
+                    st.success(f"Restoration area selected: {placement['area_acres']:.2f} acres · approximately {placement['distance_from_build_m']} m from the construction footprint")
+                    if st.button('Analyze restoration opportunities', type='primary',
+                                 use_container_width=True, key='analyze_restoration'):
+                        with st.spinner('Checking the mapped vegetation and aquatic features…'):
+                            reuse_id = st.session_state.restoration_reuse_id
+                            if reuse_id and reuse_id == (alternative or {}).get('id'):
+                                previous = st.session_state.results[reuse_id]
+                                assessment = {
+                                    'area_acres': previous['area_acres'],
+                                    'land': previous['land'], 'wet': previous['wet'],
+                                    'issues': previous['issues'],
+                                    'analyzed_utc': previous['analyzed_utc'],
+                                }
+                            else:
+                                assessment = analyze_restoration_area(area_feature)
+                            plan = make_restoration_plan(
+                                st.session_state.results[development_id], assessment,
+                                placement, development_name=development['name'],
+                                location_name=st.session_state.restoration_source_name,
+                            )
+                            st.session_state.restoration_analysis = assessment
+                            st.session_state.restoration_plan = plan
+                        st.rerun()
+                except ValueError as exc:
+                    st.error(f'The restoration polygon must be updated: {exc}')
+
+            plan = st.session_state.restoration_plan
+            if plan:
+                st.divider()
+                st.markdown('### 4 · Your preliminary restoration opportunity plan')
+                acreage = f"{plan['restoration_acres']:.2f} acres"
+                potential = (f"~{plan['estimated_modifiable_cover_acres']:.2f} acres" if
+                             plan['estimated_modifiable_cover_acres'] is not None else 'Unknown')
+                st.markdown(f'''<div class="meta-strip">
+                  <div class="restoration-stat"><div class="value">{escape(acreage)}</div><div class="label">Area explored</div><div class="description">User-selected restoration polygon</div></div>
+                  <div class="restoration-stat"><div class="value">{escape(potential)}</div><div class="label">Potentially modifiable mapped cover</div><div class="description">Estimated turf/open developed + agricultural cover — not verified plantable area</div></div>
+                  <div class="restoration-stat"><div class="value">Not calculated</div><div class="label">Verified biodiversity offset</div><div class="description">Requires specialist evaluation and ecological equivalence</div></div>
+                </div>''',unsafe_allow_html=True)
+                st.markdown('**Possible actions to investigate**')
+                if plan['development_mapped_natural_acres'] is not None:
+                    st.info(
+                        f"The construction footprint for **{plan['development_name']}** includes about "
+                        f"**{plan['development_mapped_natural_acres']:.2f} acres** of mapped natural/wetland cover. "
+                        'This cannot be directly balanced against potential planting acres: "acres restored" do not equal "acres of biodiversity loss offset."'
+                    )
+                cards = []
+                for action in plan['actions']:
+                    cards.append(f'''<article class="restoration-action"><span class="small-badge">{escape(action['step'])}</span>
+                        <h4>{escape(action['title'])}</h4><p>{escape(action['rationale'])}</p>
+                        <div class="verify"><strong>Check first:</strong> {escape(action['verify'])}</div></article>''')
+                st.markdown(''.join(cards), unsafe_allow_html=True)
+                st.warning('Important limits: ' + ' '.join(plan['warnings']))
+                if plan['issues']:
+                    st.error('Map data gaps: ' + '; '.join(f'{k}: {v}' for k,v in plan['issues'].items()))
+                st.download_button('↓ Download restoration plan (.md)', plan_markdown(plan),
+                                   file_name='ecosite_restoration_opportunity_plan.md',
+                                   mime='text/markdown', use_container_width=True)
+                st.caption('Sources: USGS annual land cover, USFWS aquatic map, Society for Ecological Restoration (2026), and IUCN mitigation hierarchy. No ecological equivalence, cost or suitability is certified.')
+    else:
+        st.caption('Restoration planning is optional. Open it only after comparing potential construction locations.')
 
 st.divider()
 with st.expander("How the letter grades work · Read before using results"):
